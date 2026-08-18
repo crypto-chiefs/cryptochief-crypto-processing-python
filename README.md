@@ -87,6 +87,7 @@ Both credentials come from the Dashboard -> Project.
 | Static-deposit history | `client.static_deposits` | `info`, `history` |
 | On-chain queries | `client.blockchain` | `contracts_available`, `wallet_balance`, `transaction_status` |
 | Fiat <-> crypto rate quote | `client.currencies` | `fiat_to_crypto`, `crypto_to_fiat` |
+| Credits (billing) balance check and top-up - free of charge | `client.credits` | `balance`, `topup` |
 
 ## Accept a crypto payment (pay-in)
 

@@ -75,6 +75,7 @@ from .services.blockchain import (
     TxStatusRow,
     WalletBalanceRow,
 )
+from .services.credits import CreditsBalance, CreditsService, CreditsTopup
 from .services.currencies import ConvertRequest, ConvertResponse, CurrenciesService
 from .services.payins import (
     CoinOption,
@@ -227,6 +228,7 @@ __all__ = [
     "StaticDepositsService",
     "BlockchainService",
     "CurrenciesService",
+    "CreditsService",
     # Payout types
     "EstimatePayoutRequest",
     "ExecutePayoutRequest",
@@ -296,6 +298,9 @@ __all__ = [
     # Currency types
     "ConvertRequest",
     "ConvertResponse",
+    # Credits types
+    "CreditsBalance",
+    "CreditsTopup",
     # Contract encoders
     "encode_evm_call",
     "encode_evm_call_hex",

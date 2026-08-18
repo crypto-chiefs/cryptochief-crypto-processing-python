@@ -12,6 +12,7 @@ from ._version import __version__
 from .errors import CryptoChiefError, is_retryable
 from .rsa import RsaKeyNotConfiguredError, decrypt_rsa_oaep, load_rsa_private_key_pem
 from .services.blockchain import BlockchainService
+from .services.credits import CreditsService
 from .services.currencies import CurrenciesService
 from .services.payins import PayInsService
 from .services.payouts import PayoutsService
@@ -96,6 +97,7 @@ class CryptoChiefClient:
         self.static_deposits = StaticDepositsService(self)
         self.blockchain = BlockchainService(self)
         self.currencies = CurrenciesService(self)
+        self.credits = CreditsService(self)
 
     async def request(self, path: str, body: Any = None) -> Any:
         """Low-level signed POST against an API path (e.g. ``/v1/payout/estimate``).
