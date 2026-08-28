@@ -80,6 +80,7 @@ from .services.currencies import ConvertRequest, ConvertResponse, CurrenciesServ
 from .services.payins import (
     CoinOption,
     CreatePayInRequest,
+    Environment,
     PayIn,
     PayInHistoryResponse,
     PayInMode,
@@ -110,13 +111,20 @@ from .services.static_deposits import (
     StaticDepositsService,
     StaticDepositStatus,
 )
+from .sentinels import CLEAR, Clear
 from .services.sweeps import (
     ForceSweepResponse,
     Sweep,
+    SweepFeeMode,
     SweepHistoryQuery,
     SweepHistoryResponse,
     SweepMode,
+    SweepOverride,
+    SweepPolicy,
+    SweepPolicyMode,
+    SweepSettings,
     SweepsService,
+    SweepStatus,
 )
 from .services.transactions import (
     AnchorCallRequest,
@@ -171,6 +179,10 @@ from .webhook import (
 
 __all__ = [
     "__version__",
+    # Sentinels
+    "CLEAR",
+    "Clear",
+    "Environment",
     # Client
     "CryptoChiefClient",
     "VERSION",
@@ -278,10 +290,16 @@ __all__ = [
     "WalletType",
     # Sweep types
     "Sweep",
+    "SweepFeeMode",
     "SweepHistoryQuery",
     "SweepHistoryResponse",
     "ForceSweepResponse",
     "SweepMode",
+    "SweepOverride",
+    "SweepPolicy",
+    "SweepPolicyMode",
+    "SweepSettings",
+    "SweepStatus",
     # Withdrawal types
     "Withdrawal",
     "WithdrawalHistoryResponse",

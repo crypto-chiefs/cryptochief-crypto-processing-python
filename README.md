@@ -82,7 +82,7 @@ Both credentials come from the Dashboard -> Project.
 | TON contract calls (Jetton / NFT / text) | `client.transactions` | `jetton_transfer`, `nft_transfer`, `send_ton_comment`, `sign_ton_call` |
 | Accept incoming payments | `client.pay_ins` | `create`, `select_asset`, `reset_asset`, `cancel`, `info`, `history`, `wait_for` |
 | Wallet management + RSA decrypt | `client.wallets` | `generate`, `list`, `info`, `freeze`, `decrypt_private_key` |
-| Treasury sweeps | `client.sweeps` | `force`, `history`, `wallet_history` |
+| Treasury sweeps | `client.sweeps` | `force`, `history`, `wallet_history`, `settings`, `update_settings` |
 | Withdrawals (read-only) | `client.withdrawals` | `info`, `history` |
 | Static-deposit history | `client.static_deposits` | `info`, `history` |
 | On-chain queries | `client.blockchain` | `contracts_available`, `wallet_balance`, `transaction_status` |
@@ -296,6 +296,39 @@ priv = client.wallets.decrypt_private_key(wallet.private_key_encrypted)
 - **How do I do a crypto swap?** A swap is a payout with `auto_convert=True`.
 - **How do I call a smart contract?** `client.transactions.sign_evm_call` /
   `sign_anchor_call` / `jetton_transfer`, then `transactions.execute`.
+- **How do I control when a deposit wallet is swept?**
+  `client.sweeps.settings(...)` reads the policy in force for one wallet and
+  `client.sweeps.update_settings(...)` changes it - sweep on arrival
+  (`SweepPolicyMode.MOMENTUM`), sweep once the balance reaches an amount
+  (`SweepPolicyMode.THRESHOLD` plus `threshold_amount_usd`), or never on its own
+  (`SweepPolicyMode.OFF`, force still works). The read comes back in three
+  layers - what will happen, what this wallet overrides, and what it inherits
+  from the project - so a value of your own is distinguishable from an inherited
+  one:
+
+  ```python
+  s = await client.sweeps.update_settings(
+      deposit_address,
+      type_work=SweepPolicyMode.THRESHOLD,
+      threshold_amount_usd="250",
+  )
+  # s.effective is the resolved policy; s.effective.source names the layer it came from.
+  ```
+
+  Inheritance is per field: overriding the mode leaves the fee mode inherited.
+  To stop overriding a field, pass `CLEAR` - `None` already means "leave this
+  field alone", so it cannot also mean "reset it".
+- **How do I know a sweep actually settled?** Check `status`.
+  `SweepStatus.BROADCASTED` means the transaction is out and not yet confirmed;
+  `SweepStatus.COMPLETED` means confirmed, with `sweep_confirmations` and
+  `completed_at` filled in. Earlier platform versions reported `completed` at
+  broadcast, so a sweep could read as settled while its transaction was still
+  unconfirmed.
+- **How do I keep test payments off real chains?** Set `environment` on
+  `CreatePayInRequest` to `Environment.TESTNET` or `Environment.MAINNET`. It
+  constrains the asset the platform picks when you have not named a concrete
+  network - fiat mode and `ANY` - so an unconstrained pick cannot put a real
+  payment on a test chain. Omit it to use the project's default.
 
 ## Documentation
 

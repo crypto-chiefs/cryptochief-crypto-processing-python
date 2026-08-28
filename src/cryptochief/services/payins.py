@@ -38,12 +38,40 @@ def is_payin_terminal(status: str) -> bool:
     return status in _PAYIN_TERMINAL
 
 
+class Environment(str, Enum):
+    """The two environments an order can belong to.
+
+    A project may be allowed one or both; asking for testnet on a project that
+    does not permit it is refused with ``TESTNET_NOT_ALLOWED`` rather than
+    quietly served on mainnet, and a value that is neither is
+    ``ENVIRONMENT_INVALID`` rather than a silent fallback.
+    """
+
+    MAINNET = "mainnet"
+    TESTNET = "testnet"
+
+
 @dataclass(kw_only=True)
 class CreatePayInRequest:
     order_id: str
     user_id: str
     mode: str
     to_address: Optional[str] = None
+    #: Pin the transit deposit wallet of THIS order to the given master wallet of
+    #: the project - the address the funds are swept to. The order's
+    #: asset/network chain family must match the master wallet's; a foreign or
+    #: mismatched address is rejected with 400. Omit for the project-default
+    #: behaviour.
+    master_wallet_address: Optional[str] = None
+    #: Constrain the asset the platform PICKS for this order to the real chains
+    #: or the test ones - ``Environment.MAINNET`` or ``Environment.TESTNET``.
+    #: Omit to use the project's own default.
+    #:
+    #: It changes nothing when ``asset`` names a concrete network - that is the
+    #: caller's choice. It matters in fiat mode and when the network is ``ANY``,
+    #: where the platform selects the asset and an unconstrained pick could put
+    #: a real payment on a test network.
+    environment: Optional[str] = None
     lifetime_sec: Optional[int] = None
     url_callback: Optional[str] = None
     url_success: Optional[str] = None
@@ -105,6 +133,10 @@ class SelectAssetRequest:
     uuid: str
     coin: str
     network: str
+    #: Pin the order's transit deposit wallet to the given project master
+    #: wallet; see :class:`CreatePayInRequest`. A value here overrides one
+    #: supplied at order create.
+    master_wallet_address: Optional[str] = None
 
 
 class PayInsService(BaseService):
