@@ -40,12 +40,13 @@ async def main() -> None:
         result = await client.payouts.batch_execute(BatchPayoutRequest(items=items))
         print(f"batch {result.batch_uuid}: accepted={result.accepted} rejected={result.rejected}")
 
-        # Poll every accepted item concurrently.
-        accepted = [it for it in (result.items or []) if it.uuid]
+        # Poll every accepted item concurrently. Carry the uuid alongside its item so the
+        # gather and the report below stay aligned - rejected items have no uuid to poll.
+        accepted = [(it, it.uuid) for it in (result.items or []) if it.uuid]
         finals = await asyncio.gather(
-            *(client.payouts.wait_for(it.uuid, timeout=300) for it in accepted)
+            *(client.payouts.wait_for(uuid, timeout=300) for _, uuid in accepted)
         )
-        for it, final in zip(accepted, finals):
+        for (it, _), final in zip(accepted, finals):
             print(f"  {it.order_id}: {final.status} {final.txid or ''}")
 
 

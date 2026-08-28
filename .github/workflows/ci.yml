@@ -25,7 +25,7 @@ jobs:
       - name: Lint
         run: ruff check src tests examples
       - name: Type-check
-        run: mypy src/cryptochief
+        run: mypy src/cryptochief examples
       - name: Test
         run: pytest -q
 

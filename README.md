@@ -161,6 +161,14 @@ decimal strings round-trip exactly. Discover an asset's decimals with
 
 ## Contract calls without hand-encoding
 
+> **This snippet shows the encoder, not a complete swap.** Uniswap's router
+> moves your input token with `transferFrom`, so it needs an ERC-20
+> `approve(address,uint256)` on that token first, confirmed before the swap is
+> signed — without it the swap reverts and burns the gas. And an `amountOutMin`
+> of `0` accepts whatever the pool returns, which on a public mempool hands the
+> trade to the first sandwich bot that sees it. The runnable version, with both,
+> is in `examples/`.
+
 ```python
 from cryptochief import EvmCallRequest, Erc20TransferRequest, Chain, human_to_base
 
