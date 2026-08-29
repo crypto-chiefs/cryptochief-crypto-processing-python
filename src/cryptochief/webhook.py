@@ -175,11 +175,75 @@ class StaticDepositWebhookEvent:
     paid_at: Optional[str] = None
 
 
+#: The only sweep event the platform emits. There is deliberately no
+#: ``sweep.broadcasted``: "we sent it" is not something you can act on, and an
+#: event that means "maybe" is one more thing to reconcile.
+SWEEP_EVENT_CONFIRMED = "sweep.confirmed"
+
+
+@dataclass(kw_only=True)
+class SweepWebhookEvent:
+    """Funds swept off a deposit wallet, confirmed on chain.
+
+    A ``static_deposit.paid`` tells you a customer paid you. This tells you the
+    money has finished moving into your own custody - until it fires, the
+    balance still sits on the deposit address. Reconciliation, treasury
+    reporting and "funds available to pay out" all key off this event, not off
+    the deposit.
+
+    Sweeps run on static deposit wallets *and* on the transit wallets issued per
+    pay-in order; both deliver here, to the callback URL configured for the
+    wallet the funds left.
+    """
+
+    event: str = ""
+    #: The sweeper task. One sweep settles once - use it as your idempotency key.
+    task_id: str = ""
+    #: Always ``"completed"``. A sweep reaches you in no other state.
+    status: str = ""
+
+    #: The wallet the funds left - the address your customer paid into.
+    wallet_address: str = ""
+    #: The master wallet they landed on.
+    to_address: Optional[str] = None
+
+    network: str = ""
+    chain_family: Optional[str] = None
+    asset_symbol: str = ""
+    asset_contract: Optional[str] = None
+    #: ``"native"`` or ``"token"``.
+    asset_type: Optional[str] = None
+    amount_raw: Optional[str] = None
+    amount_human: Optional[str] = None
+
+    sweep_tx_hash: str = ""
+    #: Set when the platform had to fund gas on the wallet before it could sweep.
+    gas_pump_tx_hash: Optional[str] = None
+
+    #: What makes this event true rather than hopeful, and never zero. It
+    #: travels with the event rather than being implied by it: "confirmed" is
+    #: not the same number on every chain, so if you run your own finality
+    #: policy you need the count to apply it.
+    sweep_confirmations: int = 0
+
+    #: When the chain was observed to hold the sweep. NOT the task's completion
+    #: timestamp, which is stamped on every terminal outcome - failures
+    #: included - and so says nothing about settlement.
+    confirmed_at: Optional[str] = None
+
+    #: What triggered it: ``"momentum"``, ``"threshold"`` or ``"force"``.
+    type_work: Optional[str] = None
+    #: What the sweep cost: network fee plus any gas or energy the platform
+    #: fronted to make it possible.
+    total_fee_usd: Optional[str] = None
+
+
 WebhookEvent = Union[
     PayoutWebhookEvent,
     TransactionWebhookEvent,
     PayInWebhookEvent,
     StaticDepositWebhookEvent,
+    SweepWebhookEvent,
     Dict[str, Any],
 ]
 
@@ -188,4 +252,5 @@ _EVENT_BY_PREFIX = {
     "transaction": TransactionWebhookEvent,
     "invoice": PayInWebhookEvent,
     "static_deposit": StaticDepositWebhookEvent,
+    "sweep": SweepWebhookEvent,
 }

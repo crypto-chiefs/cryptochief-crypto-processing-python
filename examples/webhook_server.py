@@ -27,6 +27,7 @@ from cryptochief import (
     PayInWebhookEvent,
     PayoutWebhookEvent,
     StaticDepositWebhookEvent,
+    SweepWebhookEvent,
     TransactionWebhookEvent,
     WebhookSignatureError,
     parse_webhook_event,
@@ -35,6 +36,33 @@ from cryptochief import (
 API_KEY = os.environ.get("API_KEY") or ""
 if not API_KEY:
     raise SystemExit("set API_KEY in the environment")
+
+
+def on_sweep_confirmed(event: SweepWebhookEvent) -> None:
+    """Your money finishing its move into your own custody.
+
+    A ``static_deposit.paid`` told you a customer paid. This says the funds have
+    been swept off the deposit address and the sweep is confirmed on chain.
+    Until it fires the balance still sits on the deposit wallet, so treasury
+    reporting and "available to pay out" should key off this, not the deposit.
+    """
+    print(
+        f"sweep {event.task_id}: {event.amount_human} {event.asset_symbol} "
+        f"{event.wallet_address} -> {event.to_address} "
+        f"tx={event.sweep_tx_hash} confirmations={event.sweep_confirmations} "
+        f"trigger={event.type_work} fee_usd={event.total_fee_usd}"
+    )
+
+    # task_id is the idempotency key: one sweep settles once. Seeing it twice
+    # means a redelivery - acknowledge and stop.
+    # if treasury.already_recorded(event.task_id):
+    #     return
+
+    # The event only ever arrives confirmed, but apply your own finality policy
+    # here if you have one - "confirmed" is not the same number on every chain.
+    # treasury.record_settled(event.task_id, event.asset_symbol, event.amount_human, event.sweep_tx_hash)
+    # ledger.move_to_available(customer_for(event.wallet_address), event.asset_symbol, event.amount_human)
+    # costs.record(event.task_id, event.total_fee_usd)  # sweeps are not free
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -61,6 +89,8 @@ class Handler(BaseHTTPRequestHandler):
             print(f"invoice {event.uuid}: {event.status}")  # paid | expired | ...
         elif isinstance(event, StaticDepositWebhookEvent):
             print(f"static_deposit {event.uuid}: {event.status}")
+        elif isinstance(event, SweepWebhookEvent):
+            on_sweep_confirmed(event)
         else:
             print("unhandled event:", event.get("event"))
 

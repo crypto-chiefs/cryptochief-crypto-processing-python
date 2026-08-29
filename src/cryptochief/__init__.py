@@ -170,6 +170,8 @@ from .webhook import (
     PayInWebhookEvent,
     PayoutWebhookEvent,
     StaticDepositWebhookEvent,
+    SweepWebhookEvent,
+    SWEEP_EVENT_CONFIRMED,
     TransactionWebhookEvent,
     WebhookSignatureError,
     coerce_webhook_event,
@@ -230,6 +232,8 @@ __all__ = [
     "TransactionWebhookEvent",
     "PayInWebhookEvent",
     "StaticDepositWebhookEvent",
+    "SweepWebhookEvent",
+    "SWEEP_EVENT_CONFIRMED",
     # Services
     "PayoutsService",
     "TransactionsService",
