@@ -7,6 +7,7 @@ from enum import Enum
 from typing import List, Optional
 
 from .._models import from_dict
+from ..errors import CryptoChiefError
 from .base import BaseService
 
 
@@ -22,6 +23,13 @@ class GenerateWalletRequest:
     chain_family: str
     master_wallet_address: Optional[str] = None  # transit/static wallets only
     callback_url: Optional[str] = None  # static wallets only - per-deposit webhook URL
+    #: A name for the wallet, for people reading a list of them. Applies to
+    #: every wallet type - it names the wallet, it is not a property of its
+    #: role - and is yours alone: nothing on chain and nothing in routing
+    #: depends on it. Up to 255 characters, longer answers ``LABEL_TOO_LONG``.
+    #: Leave it ``None`` to omit it; the endpoint rejects unknown fields, and an
+    #: empty string is a name rather than the absence of one.
+    label: Optional[str] = None
 
 
 @dataclass(kw_only=True)
@@ -44,7 +52,14 @@ class Wallet:
     type: Optional[str] = None
     wallet_type: Optional[str] = None
     frozen: Optional[bool] = None
+    #: The master this wallet sweeps into, ``None`` when it has none - a master
+    #: wallet has no master of its own. The API always sends the key and sends
+    #: ``null`` rather than an empty string, so ``None`` here means "no master",
+    #: not "not reported". :meth:`WalletsService.rebind_master` changes it.
     master_wallet_address: Optional[str] = None
+    #: Where deposits to this address are announced, ``None`` when nowhere. Only
+    #: a static wallet has one: a master or transit always reads ``None``.
+    #: :meth:`WalletsService.set_callback_url` changes it.
     callback_url: Optional[str] = None
     #: Base64 RSA-OAEP/SHA-256 ciphertext - decrypt with ``decrypt_private_key``.
     private_key_encrypted: Optional[str] = None
@@ -74,6 +89,83 @@ class WalletsService(BaseService):
     async def freeze(self, address: str) -> Wallet:
         """Toggle the frozen flag - the response's ``frozen`` field is the new state."""
         return from_dict(Wallet, await self._post("/v1/wallets/freeze", {"address": address}))
+
+    async def rebind_master(self, address: str, master_wallet_address: str) -> Wallet:
+        """Re-point a transit or static wallet at another master of the project.
+
+        The master link is decided when the wallet is created - at the master
+        named on that request, or, when none was named, at the project's *oldest*
+        master of that chain family, which on a project with more than one master
+        is rarely the one you meant. This is the way back.
+
+        It moves no money. It changes where the *next* sweep settles, including
+        sweeps already queued, because the destination is resolved when the sweep
+        runs; anything already swept sits on the previous master and has to be
+        sent from there as an ordinary payout.
+
+        Idempotent - a wallet already bound to that master answers 200 unchanged,
+        so re-running the same list is safe. A master wallet cannot be
+        re-pointed at all (``only transit and static wallets have a master``);
+        naming something that is not a master as the TARGET is a different
+        refusal (``not_a_master_wallet``). The target master must be the same
+        chain family (``chain_family_mismatch``) and not frozen
+        (``master_wallet_frozen``), since sweeping into a frozen master would
+        strand the funds there.
+
+        These tokens arrive in the error MESSAGE, not as a machine-readable
+        code: the gateway answers ``{"error": "SERVICE_ERROR", "msg": "<token>"}``
+        for every upstream refusal, so branch on the message if you must branch,
+        and do not expect them in ``APIError.code``. Memo/tag-based families share one deposit
+        account across orders and are excluded
+        (``shared_transit_cannot_be_rebound``). Both addresses resolve against
+        the authenticated project, so one that is not yours answers
+        ``wallet_not_found`` / ``master_wallet_not_found`` rather than revealing
+        that it exists elsewhere.
+
+        Returns the wallet as it now stands.
+        """
+        return from_dict(
+            Wallet,
+            await self._post(
+                "/v1/wallets/rebind-master",
+                {"address": address, "master_wallet_address": master_wallet_address},
+            ),
+        )
+
+    async def set_callback_url(self, address: str, callback_url: str) -> Wallet:
+        """Set or clear a static wallet's deposit webhook after creation.
+
+        Deposits are announced to the callback URL the *address* carries, which
+        is fixed when the address is minted - so an address you did not create
+        through your own integration, or one minted before your endpoint moved,
+        keeps announcing its deposits somewhere else, or nowhere. This corrects
+        it, from the next deposit on: one already announced is not re-announced
+        to the new URL.
+
+        Pass ``""`` to clear it and stop announcing deposits for the address.
+        That is a real instruction rather than a missing field, so the SDK sends
+        the empty string instead of dropping it the way it drops unset optional
+        fields; the wallet then reads back ``callback_url=None``. ``None`` is
+        not that instruction and is refused here rather than silently leaving
+        the field off the body.
+
+        Static wallets only - a master or transit has no per-deposit callback
+        and answers 400. The address resolves against the authenticated project,
+        so one that is not yours answers ``wallet_not_found``.
+
+        Returns the wallet as it now stands.
+        """
+        if callback_url is None:
+            raise CryptoChiefError(
+                'cryptochief: set_callback_url: callback_url is required; pass "" to clear it'
+            )
+        return from_dict(
+            Wallet,
+            await self._post(
+                "/v1/wallets/callback-url",
+                {"address": address, "callback_url": callback_url},
+            ),
+        )
 
     def decrypt_private_key(self, encrypted: str) -> str:
         """Decrypt a generated wallet's ``private_key_encrypted`` field locally.

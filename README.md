@@ -81,7 +81,7 @@ Both credentials come from the Dashboard -> Project.
 | Solana programs | `client.transactions` | `sign_anchor_call`, `sign_solana_call` |
 | TON contract calls (Jetton / NFT / text) | `client.transactions` | `jetton_transfer`, `nft_transfer`, `send_ton_comment`, `sign_ton_call` |
 | Accept incoming payments | `client.pay_ins` | `create`, `select_asset`, `reset_asset`, `cancel`, `info`, `history`, `wait_for` |
-| Wallet management + RSA decrypt | `client.wallets` | `generate`, `list`, `info`, `freeze`, `decrypt_private_key` |
+| Wallet management + RSA decrypt | `client.wallets` | `generate`, `list`, `info`, `freeze`, `rebind_master`, `set_callback_url`, `decrypt_private_key` |
 | Treasury sweeps | `client.sweeps` | `force`, `history`, `wallet_history`, `settings`, `update_settings` |
 | Withdrawals (read-only) | `client.withdrawals` | `info`, `history` |
 | Static-deposit history | `client.static_deposits` | `info`, `history` |
@@ -332,6 +332,27 @@ priv = client.wallets.decrypt_private_key(wallet.private_key_encrypted)
   `completed_at` filled in. Earlier platform versions reported `completed` at
   broadcast, so a sweep could read as settled while its transaction was still
   unconfirmed.
+- **My deposits are settling on the wrong master wallet.**
+  `client.wallets.rebind_master(address, master_wallet_address)` re-points a
+  transit or static wallet at another master of the project - the link is
+  otherwise decided at creation, falling back to the project's *oldest* master
+  of that chain family when none was named. It moves no money: it changes where
+  the **next** sweep settles, including sweeps already queued, and anything
+  already swept sits on the previous master and has to be sent from there as an
+  ordinary payout. It is idempotent, so re-running the same list is safe.
+- **A static address is announcing deposits to the wrong URL.** Deposits go to
+  the callback the *address* carries, fixed when it was minted - so an address
+  you did not create through your own integration, or one minted before your
+  endpoint moved, keeps notifying somewhere else.
+  `client.wallets.set_callback_url(address, url)` corrects it, from the next
+  deposit on (one already announced is not re-announced). Pass `""` to clear it
+  and stop the announcements - the SDK sends the empty string rather than
+  dropping it the way it drops unset optional fields, and the wallet then reads
+  back `callback_url=None`. Static wallets only.
+- **How do I name a wallet?** Pass `label` on
+  `client.wallets.generate(GenerateWalletRequest(..., label="EU shop"))`. It
+  applies to every wallet type, is up to 255 characters, and is yours alone -
+  nothing on chain and nothing in routing depends on it.
 - **How do I keep test payments off real chains?** Set `environment` on
   `CreatePayInRequest` to `Environment.TESTNET` or `Environment.MAINNET`. It
   constrains the asset the platform picks when you have not named a concrete

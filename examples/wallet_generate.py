@@ -26,7 +26,13 @@ async def main() -> None:
         merchant_id=need("MERCHANT_ID"), api_key=need("API_KEY"), rsa_private_key=rsa_pem
     ) as client:
         wallet = await client.wallets.generate(
-            GenerateWalletRequest(wallet_type=WalletType.MASTER, chain_family=ChainFamily.EVM)
+            GenerateWalletRequest(
+                wallet_type=WalletType.MASTER,
+                chain_family=ChainFamily.EVM,
+                # Optional, any wallet type: a name for people reading a list of
+                # wallets. Yours alone - nothing on chain depends on it.
+                label="treasury (EVM)",
+            )
         )
         print("address:", wallet.address)
 
