@@ -29,6 +29,7 @@ class GenerateWalletRequest:
     #: depends on it. Up to 255 characters, longer answers ``LABEL_TOO_LONG``.
     #: Leave it ``None`` to omit it; the endpoint rejects unknown fields, and an
     #: empty string is a name rather than the absence of one.
+    #: :meth:`WalletsService.set_label` renames the wallet afterwards.
     label: Optional[str] = None
 
 
@@ -61,6 +62,12 @@ class Wallet:
     #: a static wallet has one: a master or transit always reads ``None``.
     #: :meth:`WalletsService.set_callback_url` changes it.
     callback_url: Optional[str] = None
+    #: The wallet's name, ``None`` when it has none. Every wallet type can carry
+    #: one, and every response that describes a wallet reports it. The API
+    #: always sends the key and sends ``null`` rather than an empty string, so
+    #: ``None`` here means "unnamed" - a cleared label reads back as ``None``,
+    #: never as ``""``. :meth:`WalletsService.set_label` changes it.
+    label: Optional[str] = None
     #: Base64 RSA-OAEP/SHA-256 ciphertext - decrypt with ``decrypt_private_key``.
     private_key_encrypted: Optional[str] = None
     created_at: Optional[str] = None
@@ -165,6 +172,42 @@ class WalletsService(BaseService):
                 "/v1/wallets/callback-url",
                 {"address": address, "callback_url": callback_url},
             ),
+        )
+
+    async def set_label(self, address: str, label: str) -> Wallet:
+        """Set or clear a wallet's label - the name it is read by.
+
+        A label is yours alone: nothing on chain and nothing in routing depends
+        on it. It is also the only thing telling one freshly minted address
+        apart from the next in a list, so a wallet created before the label was
+        supported, or minted somewhere other than your own integration, is worth
+        naming after the fact. This is how.
+
+        Every wallet type can be renamed - master, transit and static alike,
+        because a label names the wallet rather than describing its role. That
+        is unlike :meth:`set_callback_url`, which only a static wallet has.
+
+        Pass ``""`` to clear the name and leave the wallet unnamed. That is a
+        real instruction rather than a missing field, so the SDK sends the empty
+        string instead of dropping it the way it drops unset optional fields;
+        the wallet then reads back ``label=None``. ``None`` is not that
+        instruction and is refused here rather than silently leaving the field
+        off the body.
+
+        Up to 255 characters, longer answers ``LABEL_TOO_LONG``. The address
+        resolves against the authenticated project, so one that is not yours
+        answers ``wallet_not_found`` rather than revealing that it exists
+        elsewhere.
+
+        Returns the wallet as it now stands.
+        """
+        if label is None:
+            raise CryptoChiefError(
+                'cryptochief: set_label: label is required; pass "" to clear it'
+            )
+        return from_dict(
+            Wallet,
+            await self._post("/v1/wallets/label", {"address": address, "label": label}),
         )
 
     def decrypt_private_key(self, encrypted: str) -> str:

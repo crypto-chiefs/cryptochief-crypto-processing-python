@@ -81,7 +81,7 @@ Both credentials come from the Dashboard -> Project.
 | Solana programs | `client.transactions` | `sign_anchor_call`, `sign_solana_call` |
 | TON contract calls (Jetton / NFT / text) | `client.transactions` | `jetton_transfer`, `nft_transfer`, `send_ton_comment`, `sign_ton_call` |
 | Accept incoming payments | `client.pay_ins` | `create`, `select_asset`, `reset_asset`, `cancel`, `info`, `history`, `wait_for` |
-| Wallet management + RSA decrypt | `client.wallets` | `generate`, `list`, `info`, `freeze`, `rebind_master`, `set_callback_url`, `decrypt_private_key` |
+| Wallet management + RSA decrypt | `client.wallets` | `generate`, `list`, `info`, `freeze`, `rebind_master`, `set_callback_url`, `set_label`, `decrypt_private_key` |
 | Treasury sweeps | `client.sweeps` | `force`, `history`, `wallet_history`, `settings`, `update_settings` |
 | Withdrawals (read-only) | `client.withdrawals` | `info`, `history` |
 | Static-deposit history | `client.static_deposits` | `info`, `history` |
@@ -353,6 +353,14 @@ priv = client.wallets.decrypt_private_key(wallet.private_key_encrypted)
   `client.wallets.generate(GenerateWalletRequest(..., label="EU shop"))`. It
   applies to every wallet type, is up to 255 characters, and is yours alone -
   nothing on chain and nothing in routing depends on it.
+- **How do I rename a wallet I already have?**
+  `client.wallets.set_label(address, "EU shop")` - every wallet type, master
+  and transit included, unlike the deposit callback. Pass `""` to clear the
+  name: as with `set_callback_url`, the empty string is sent rather than
+  dropped, and the wallet then reads back `label=None`. The name comes back on
+  every response that describes a wallet - generation, `info`, `list`, and the
+  answers of `rebind_master` / `set_callback_url` / `set_label` itself - as
+  `wallet.label`, `None` when the wallet is unnamed.
 - **How do I keep test payments off real chains?** Set `environment` on
   `CreatePayInRequest` to `Environment.TESTNET` or `Environment.MAINNET`. It
   constrains the asset the platform picks when you have not named a concrete

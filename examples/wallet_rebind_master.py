@@ -1,9 +1,10 @@
-"""wallet_rebind_master - fix a deposit wallet that settles or notifies elsewhere.
+"""wallet_rebind_master - fix a deposit wallet that settles, notifies or reads wrong.
 
-Both operations correct a decision made when the address was minted: which master
-it sweeps into, and where its deposits are announced.
+All three operations correct a decision made when the address was minted: which
+master it sweeps into, where its deposits are announced, and what it is called.
 
     MERCHANT_ID=... API_KEY=... ADDRESS=0x... MASTER_WALLET_ADDRESS=0x... \
+        [LABEL="EU shop - order 4471"] \
         [CALLBACK_URL=https://example.com/webhooks/deposits] \
         python examples/wallet_rebind_master.py
 """
@@ -36,6 +37,17 @@ async def main() -> None:
         wallet = await client.wallets.rebind_master(address, need("MASTER_WALLET_ADDRESS"))
         print("type:", wallet.type)
         print("master is now:", wallet.master_wallet_address)
+        # None when the wallet has no name - never an empty string.
+        print("name:", wallet.label)
+
+        # Renaming works on every wallet type, master and transit included: a
+        # label names the wallet, it does not describe its role. Like the
+        # callback below, "" is the CLEAR instruction and so is not defaulted
+        # into - an unset LABEL must not wipe the name off a live wallet.
+        label = os.environ.get("LABEL")
+        if label is not None:
+            wallet = await client.wallets.set_label(address, label)
+            print("name is now:", wallet.label)
 
         if wallet.type != WalletType.STATIC.value:
             # A master or transit has no per-deposit callback to set.

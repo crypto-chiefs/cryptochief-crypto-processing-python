@@ -75,6 +75,10 @@ class ErrorCode(str, Enum):
     ORDER_NOT_LIVE = "ORDER_NOT_LIVE"
     ASSET_ALREADY_SELECTED = "ASSET_ALREADY_SELECTED"
     INVALID_PARAMS = "INVALID_PARAMS"
+    #: A wallet label over 255 characters. A real machine code from the gateway,
+    #: unlike the upstream refusals that arrive as SERVICE_ERROR with the detail
+    #: in the message.
+    LABEL_TOO_LONG = "LABEL_TOO_LONG"
     SERVICE_ERROR = "SERVICE_ERROR"
     UNAUTHORIZED = "UNAUTHORIZED"
     URL_CALLBACK_REQUIRED = "URL_CALLBACK_REQUIRED"

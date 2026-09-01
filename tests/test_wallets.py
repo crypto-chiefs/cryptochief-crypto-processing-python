@@ -1,11 +1,12 @@
 """Wallet naming, master re-pointing and the deposit-callback endpoint.
 
 Covers the wire shapes of ``/v1/wallets/generate`` (the optional ``label``),
-``/v1/wallets/rebind-master`` and ``/v1/wallets/callback-url`` - in particular
-that an empty ``callback_url`` is *sent* rather than dropped, because it is how
-the API says "stop announcing deposits for this address", and that a ``null``
-``master_wallet_address`` / ``callback_url`` decodes to ``None`` instead of
-throwing.
+``/v1/wallets/rebind-master``, ``/v1/wallets/callback-url`` and
+``/v1/wallets/label`` - in particular that an empty ``callback_url`` or
+``label`` is *sent* rather than dropped, because that is how the API says "stop
+announcing deposits for this address" and "this wallet has no name", and that a
+``null`` ``master_wallet_address`` / ``callback_url`` / ``label`` decodes to
+``None`` instead of throwing.
 """
 
 import json
@@ -30,6 +31,7 @@ STATIC_WALLET = {
     "frozen": False,
     "master_wallet_address": "0xcCb1c30b39d461364FC503da0CaA751212183DE2",
     "callback_url": "https://your-shop.example/webhooks/deposits",
+    "label": "EU shop - order 4471",
 }
 
 
@@ -131,6 +133,8 @@ async def test_rebind_master_posts_the_documented_body_and_returns_the_wallet():
     assert out.frozen is False
     assert out.master_wallet_address == STATIC_WALLET["master_wallet_address"]
     assert out.callback_url == STATIC_WALLET["callback_url"]
+    # Every response that describes a wallet reports its name, this one included.
+    assert out.label == "EU shop - order 4471"
     await client.aclose()
 
 
@@ -184,7 +188,7 @@ async def test_set_callback_url_refuses_none_instead_of_dropping_the_field():
     await client.aclose()
 
 
-async def test_null_master_and_callback_decode_as_none():
+async def test_null_master_callback_and_label_decode_as_none():
     captured: dict = {}
     client = _client(
         captured,
@@ -195,16 +199,139 @@ async def test_null_master_and_callback_decode_as_none():
             "frozen": False,
             "master_wallet_address": None,
             "callback_url": None,
+            "label": None,
         },
     )
 
     out = await client.wallets.rebind_master("0x8a2F", "0xcCb1")
 
-    # Both keys are always present and null when the wallet has no such value -
-    # a transit wallet never has a per-deposit callback. The null must decode,
-    # not throw.
+    # All three keys are always present and null when the wallet has no such
+    # value - a transit wallet never has a per-deposit callback, and an unnamed
+    # wallet reports null rather than "". The null must decode, not throw.
     assert out.type == "transit"
     assert out.frozen is False
     assert out.master_wallet_address is None
     assert out.callback_url is None
+    assert out.label is None
+    await client.aclose()
+
+
+async def test_set_label_posts_the_documented_body():
+    captured: dict = {}
+    client = _client(captured, STATIC_WALLET)
+
+    out = await client.wallets.set_label("0x4Afb", "EU shop - order 4471")
+
+    req = captured["request"]
+    assert str(req.url) == "https://api-processing.crypto-chief.com/v1/wallets/label"
+    assert req.method == "POST"
+    assert req.headers["Merchant"] == "M1"
+    expected = canonical_json({"address": "0x4Afb", "label": "EU shop - order 4471"})
+    assert req.content.decode("utf-8") == expected
+    assert _body(captured).keys() == {"address", "label"}
+    assert req.headers["Signature"] == sign(expected, "secret")
+    assert out.label == "EU shop - order 4471"
+    await client.aclose()
+
+
+async def test_an_empty_label_is_sent_rather_than_omitted():
+    captured: dict = {}
+    client = _client(captured, {**STATIC_WALLET, "label": None})
+
+    out = await client.wallets.set_label("0x4Afb", "")
+
+    body = captured["request"].content.decode("utf-8")
+    # "" is the instruction "this wallet has no name", not an unset field.
+    # Dropping it the way unset optionals are dropped would leave the old name
+    # in place and answer INVALID_PARAMS.
+    assert body == '{"address":"0x4Afb","label":""}'
+    assert _body(captured)["label"] == ""
+    assert captured["request"].headers["Signature"] == sign(body, "secret")
+    # Cleared reads back as null, never as an empty string.
+    assert out.label is None
+    await client.aclose()
+
+
+async def test_set_label_refuses_none_instead_of_dropping_the_field():
+    captured: dict = {}
+    client = _client(captured, STATIC_WALLET)
+
+    with pytest.raises(CryptoChiefError):
+        await client.wallets.set_label("0x4Afb", None)  # type: ignore[arg-type]
+
+    # Nothing was sent: None would have been serialized away, and a body without
+    # label is a different request than the caller wrote.
+    assert "request" not in captured
+    await client.aclose()
+
+
+async def test_set_label_renames_a_master_wallet_too():
+    captured: dict = {}
+    client = _client(
+        captured,
+        {
+            "type": "master",
+            "address": "0xcCb1",
+            "chain_family": "EVM",
+            "frozen": False,
+            "master_wallet_address": None,
+            "callback_url": None,
+            "label": "treasury (EVM)",
+        },
+    )
+
+    out = await client.wallets.set_label("0xcCb1", "treasury (EVM)")
+
+    # A label names the wallet, so unlike the deposit callback it is not
+    # static-only: nothing here narrows the endpoint to one wallet type.
+    assert _body(captured) == {"address": "0xcCb1", "label": "treasury (EVM)"}
+    assert out.type == "master"
+    assert out.label == "treasury (EVM)"
+    assert out.master_wallet_address is None
+    await client.aclose()
+
+
+async def test_generated_wallets_and_the_list_report_the_label():
+    captured: dict = {}
+    client = _client(
+        captured,
+        {
+            "address": "0x4Afb",
+            "chain_family": "EVM",
+            "wallet_type": "static",
+            "label": "EU shop - order 4471",
+        },
+    )
+    generated = await client.wallets.generate(
+        GenerateWalletRequest(
+            wallet_type=WalletType.STATIC,
+            chain_family=ChainFamily.EVM,
+            label="EU shop - order 4471",
+        )
+    )
+    assert generated.label == "EU shop - order 4471"
+    await client.aclose()
+
+    captured2: dict = {}
+    client2 = _client(
+        captured2,
+        {"items": [STATIC_WALLET, {**STATIC_WALLET, "address": "0x8a2F", "label": None}]},
+    )
+    listed = await client2.wallets.list()
+
+    # The list is where a name earns its keep, and an unnamed wallet in it is a
+    # null rather than a missing key or an empty string.
+    assert [w.label for w in listed.items or []] == ["EU shop - order 4471", None]
+    await client2.aclose()
+
+
+async def test_set_callback_url_response_still_carries_the_label():
+    captured: dict = {}
+    client = _client(captured, STATIC_WALLET)
+
+    out = await client.wallets.set_callback_url("0x4Afb", "https://your-shop.example/hook")
+
+    # The neighbouring updates answer with the same wallet shape, name included:
+    # changing the webhook does not blank the name out of the response.
+    assert out.label == "EU shop - order 4471"
     await client.aclose()
