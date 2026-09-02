@@ -81,12 +81,12 @@ Both credentials come from the Dashboard -> Project.
 | Solana programs | `client.transactions` | `sign_anchor_call`, `sign_solana_call` |
 | TON contract calls (Jetton / NFT / text) | `client.transactions` | `jetton_transfer`, `nft_transfer`, `send_ton_comment`, `sign_ton_call` |
 | Accept incoming payments | `client.pay_ins` | `create`, `select_asset`, `reset_asset`, `cancel`, `info`, `history`, `wait_for` |
-| Wallet management + RSA decrypt | `client.wallets` | `generate`, `list`, `info`, `freeze`, `rebind_master`, `set_callback_url`, `set_label`, `decrypt_private_key` |
+| Wallet management + RSA decrypt | `client.wallets` | `generate`, `list`, `info`, `pay_in_history`, `freeze`, `rebind_master`, `set_callback_url`, `set_label`, `decrypt_private_key` |
 | Treasury sweeps | `client.sweeps` | `force`, `history`, `wallet_history`, `settings`, `update_settings` |
 | Withdrawals (read-only) | `client.withdrawals` | `info`, `history` |
 | Static-deposit history | `client.static_deposits` | `info`, `history` |
-| On-chain queries | `client.blockchain` | `contracts_available`, `wallet_balance`, `transaction_status` |
-| Fiat <-> crypto rate quote | `client.currencies` | `fiat_to_crypto`, `crypto_to_fiat` |
+| On-chain queries | `client.blockchain` | `supported_chains`, `contracts_available`, `contracts_list`, `wallet_balance`, `transaction_status` |
+| Fiat <-> crypto rate quote + what can be priced | `client.currencies` | `fiat_to_crypto`, `crypto_to_fiat`, `fiats`, `cryptos` |
 | Credits (billing) balance check and top-up - free of charge | `client.credits` | `balance`, `topup` |
 
 ## Accept a crypto payment (pay-in)
@@ -158,6 +158,58 @@ base_to_human(10_000, 8)            # "0.0001"
 `int` is arbitrary-precision in Python, so token values never overflow and
 decimal strings round-trip exactly. Discover an asset's decimals with
 `client.blockchain.contracts_available()`.
+
+## Which chains and assets are there
+
+Three calls answer that question live, and they answer different questions:
+
+```python
+# The chains the platform's scanner is connected to right now - infrastructure,
+# not entitlement. A bare array on the wire, so a plain list here.
+for c in await client.blockchain.supported_chains():
+    print(c.name, c.type)            # "ETH_MAINNET" "evm"
+
+# What THIS project can be paid in right now - the list that governs orders,
+# sweeps and payouts.
+enabled = await client.blockchain.contracts_available()
+
+# Every coin and token the platform supports anywhere, whether or not this
+# project has it on: the "which assets could we turn on" picker.
+catalogue = await client.blockchain.contracts_list()
+on = {(a.network, a.coin) for a in enabled.items or []}
+
+for a in catalogue.items or []:
+    kind = "token" if a.contract else "native"   # contract is "" for a native coin
+    print(a.network, a.coin, kind, a.chain_family,
+          "test" if a.is_test else "live",
+          "enabled" if (a.network, a.coin) in on else "available")
+```
+
+Both asset calls return the same row type, so code that reads one reads the
+other. `supported_chains()` and `fiats()` are the two bare-array endpoints, and
+an empty answer arrives from them as a literal `null` rather than `[]` - both
+decode to an empty list, so neither result needs a `None` guard before you
+iterate it.
+
+Two more lists say what the platform can put a **price** on, which is a
+different question:
+
+```python
+# Every fiat code you can price an order in - a bare array on the wire, so a
+# plain list here. These are the codes `currency` takes on a fiat-mode pay-in.
+for f in await client.currencies.fiats():
+    print(f.code, f.name)            # "SEK" "Swedish Krona"
+
+rates = await client.currencies.cryptos()
+print(rates.count, "tickers against", rates.quote)          # "... against USDT"
+print(list(rates.by_exchange or {}))  # ["binance", "bybit", "exmo", "kucoin"]
+```
+
+`cryptos()` is **rate availability, not payment availability**. A ticker there
+can be quoted; it does not follow that the platform takes deposits, sweeps or
+payouts in it - `count` runs into the thousands, and `contracts_available()`
+does not. Build a customer-facing asset picker from `contracts_available()` or
+you will offer assets that orders then refuse.
 
 ## Contract calls without hand-encoding
 
@@ -305,6 +357,24 @@ priv = client.wallets.decrypt_private_key(wallet.private_key_encrypted)
 - **How do I send many payouts at once?** `client.payouts.batch_execute(...)` -
   up to 50 items, funds locked sequentially.
 - **How do I do a crypto swap?** A swap is a payout with `auto_convert=True`.
+- **A payer says they sent funds and I only have the address.**
+  `client.wallets.pay_in_history(address)` lists every pay-in that used that
+  deposit address - the same `PayIn` records and `meta` block as
+  `client.pay_ins.history`, narrowed to one wallet, which matters because a
+  deposit wallet can serve several orders over its lifetime. The address is
+  matched case-insensitively, and one your project does not own yields an empty
+  page rather than an error.
+- **Which fiat currencies can I price an order in?** `client.currencies.fiats()`
+  - the ISO 4217 codes `currency` accepts on a fiat-mode pay-in and on a rate
+  quote. It answers a bare JSON array, so it returns a plain
+  `list[FiatCurrency]`.
+- **Which crypto tickers does the platform have a rate for?**
+  `client.currencies.cryptos()` - `tickers` is the union, `by_exchange` says
+  which exchange carries which, quoted against `quote` (`USDT`). **That is rate
+  availability, not payment availability:** a ticker with a price is not
+  necessarily an asset the platform takes deposits, sweeps or payouts in. Build
+  an asset picker from `client.blockchain.contracts_available()` instead, or you
+  will offer assets that orders then refuse.
 - **How do I call a smart contract?** `client.transactions.sign_evm_call` /
   `sign_anchor_call` / `jetton_transfer`, then `transactions.execute`.
 - **How do I control when a deposit wallet is swept?**
@@ -329,12 +399,51 @@ priv = client.wallets.decrypt_private_key(wallet.private_key_encrypted)
   Inheritance is per field: overriding the mode leaves the fee mode inherited.
   To stop overriding a field, pass `CLEAR` - `None` already means "leave this
   field alone", so it cannot also mean "reset it".
-- **How do I know a sweep actually settled?** Check `status`.
-  `SweepStatus.BROADCASTED` means the transaction is out and not yet confirmed;
-  `SweepStatus.COMPLETED` means confirmed, with `sweep_confirmations` and
-  `completed_at` filled in. Earlier platform versions reported `completed` at
-  broadcast, so a sweep could read as settled while its transaction was still
-  unconfirmed.
+- **Am I paying for TRON energy without knowing it?** Probably, yes. `gas_source`
+  decides *what is bought* for a TRON sweep - `SweepGasSource.NATIVE` burns the
+  wallet's own TRX, `SweepGasSource.RENTED` has the platform supply the energy
+  and bill it to your API credits - and it is independent of `fee_mode`, which
+  decides *who covers the network fees*. **Not setting it is not the same as
+  setting `native`.** A wallet that never chose one gets the platform default,
+  which is `rented`: energy is supplied and billed with nobody having switched
+  it on. Send it explicitly to opt out:
+
+  ```python
+  await client.sweeps.update_settings(deposit_address, gas_source=SweepGasSource.NATIVE)
+
+  s = await client.sweeps.settings(address=deposit_address)
+  s.effective.gas_source        # what will actually happen - always concrete
+  s.override.gas_source         # None = this layer does not decide, NOT "off"
+  ```
+
+  Passing `CLEAR` drops the override and inherits again - which lands back on
+  the default, not on `native`. TRON only; the value is carried and ignored on
+  every other chain.
+- **How do I find just the failed - or just the skipped - sweeps?** Pass
+  `status` on `SweepHistoryQuery`. Left unset it includes every status,
+  `SweepStatus.SKIPPED` among them - those are the sweeps the platform decided
+  against, almost always a balance below the wallet's threshold, and they are a
+  normal outcome rather than a failure. `search` is a substring match on the
+  wallet address, the sweep or gas-pump transaction hash and the `task_id`
+  (`client.sweeps.wallet_history` has the wallet fixed already, so there it
+  matches the hashes and the `task_id`):
+
+  ```python
+  from cryptochief import SweepHistoryQuery, SweepStatus
+
+  await client.sweeps.history(SweepHistoryQuery(status=SweepStatus.FAILED.value))
+  await client.sweeps.history(SweepHistoryQuery(search=tx_hash))
+  ```
+- **How do I know a sweep actually settled?** `status` is
+  `SweepStatus.COMPLETED` **and** `sweep_confirmations` is above zero.
+  `SweepStatus.BROADCASTED` means the transaction is out and not yet confirmed,
+  and earlier platform versions reported `completed` at broadcast, so a sweep
+  could read as settled while its transaction was still unconfirmed - the
+  confirmation count separates the two. **Do not read `completed_at` as
+  settlement:** it is stamped when the sweep reached a terminal outcome,
+  failures included, so a `SweepStatus.FAILED` sweep carries one too. The
+  moment the chain was seen holding the funds arrives separately, as
+  `confirmed_at` on the `sweep.confirmed` webhook.
 - **My deposits are settling on the wrong master wallet.**
   `client.wallets.rebind_master(address, master_wallet_address)` re-points a
   transit or static wallet at another master of the project - the link is

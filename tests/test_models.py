@@ -4,6 +4,7 @@ from cryptochief import (
     AssetsPolicy,
     Asset,
     Chain,
+    CryptoCurrencies,
     EstimatePayoutRequest,
     EstimatePayoutResponse,
     ExecutePayoutRequest,
@@ -69,3 +70,29 @@ def test_from_dict_nested_and_tolerates_unknown_keys():
     assert res.fee_info.fee_mode == "service"
     assert res.sources[0].address == "0xabc"
     assert not hasattr(res, "some_future_field")
+
+
+def test_from_dict_of_a_null_body_is_an_all_defaults_instance():
+    # A Go service building its answer from a nil value marshals JSON `null`,
+    # which has to decode rather than raise: every response model is
+    # constructible with no arguments.
+    res = from_dict(EstimatePayoutResponse, None)
+
+    assert res.network is None
+    assert res.sources is None
+    assert list(res.sources or []) == []
+
+
+def test_from_dict_reads_a_null_inside_a_map_of_lists_as_an_empty_list():
+    rates = from_dict(
+        CryptoCurrencies,
+        {"tickers": None, "by_exchange": {"binance": ["BTC"], "exmo": None}},
+    )
+
+    # Optional[List[...]] keeps its None: there the absence is part of the
+    # declared shape, and `x or []` is the idiom for it.
+    assert rates.tickers is None
+    # The map's value type is a plain List[str], so a null arriving as one of
+    # its values would be a None sitting in a list slot - it type-checks and
+    # then blows up in the caller's loop. It decodes as [] and stays iterable.
+    assert rates.by_exchange == {"binance": ["BTC"], "exmo": []}

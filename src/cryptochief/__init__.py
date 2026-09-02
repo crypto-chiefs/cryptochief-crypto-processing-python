@@ -72,11 +72,18 @@ from .services.blockchain import (
     AvailableContract,
     AvailableContractsResponse,
     BlockchainService,
+    SupportedChain,
     TxStatusRow,
     WalletBalanceRow,
 )
 from .services.credits import CreditsBalance, CreditsService, CreditsTopup
-from .services.currencies import ConvertRequest, ConvertResponse, CurrenciesService
+from .services.currencies import (
+    ConvertRequest,
+    ConvertResponse,
+    CryptoCurrencies,
+    CurrenciesService,
+    FiatCurrency,
+)
 from .services.payins import (
     CoinOption,
     CreatePayInRequest,
@@ -116,6 +123,7 @@ from .services.sweeps import (
     ForceSweepResponse,
     Sweep,
     SweepFeeMode,
+    SweepGasSource,
     SweepHistoryQuery,
     SweepHistoryResponse,
     SweepMode,
@@ -295,6 +303,7 @@ __all__ = [
     # Sweep types
     "Sweep",
     "SweepFeeMode",
+    "SweepGasSource",
     "SweepHistoryQuery",
     "SweepHistoryResponse",
     "ForceSweepResponse",
@@ -313,6 +322,7 @@ __all__ = [
     "StaticDepositHistoryResponse",
     "StaticDepositStatus",
     # Blockchain types
+    "SupportedChain",
     "AvailableContract",
     "AvailableContractsResponse",
     "WalletBalanceRow",
@@ -320,6 +330,8 @@ __all__ = [
     # Currency types
     "ConvertRequest",
     "ConvertResponse",
+    "FiatCurrency",
+    "CryptoCurrencies",
     # Credits types
     "CreditsBalance",
     "CreditsTopup",

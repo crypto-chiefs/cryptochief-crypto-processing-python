@@ -1,4 +1,4 @@
-"""Wallet naming, master re-pointing and the deposit-callback endpoint.
+"""Wallet naming, master re-pointing, the deposit-callback endpoint and pay-in history.
 
 Covers the wire shapes of ``/v1/wallets/generate`` (the optional ``label``),
 ``/v1/wallets/rebind-master``, ``/v1/wallets/callback-url`` and
@@ -7,6 +7,10 @@ Covers the wire shapes of ``/v1/wallets/generate`` (the optional ``label``),
 announcing deposits for this address" and "this wallet has no name", and that a
 ``null`` ``master_wallet_address`` / ``callback_url`` / ``label`` decodes to
 ``None`` instead of throwing.
+
+Also ``/v1/wallets/history``, which answers with the same order records as
+``/v1/payments/history`` - the same :class:`PayIn` rows and the same ``meta``
+block - so the SDK decodes it into the same types rather than a second one.
 """
 
 import json
@@ -19,10 +23,27 @@ from cryptochief import (
     CryptoChiefClient,
     CryptoChiefError,
     GenerateWalletRequest,
+    PayIn,
+    PayInHistoryResponse,
     WalletType,
     canonical_json,
     sign,
 )
+
+PAYIN_HISTORY_RESPONSE = {
+    "items": [
+        {
+            "uuid": "0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+            "order_id": "invoice-1002",
+            "status": "paid",
+            "amount_crypto": "10.5",
+            "payment_coin": "USDT",
+            "payment_network": "TRON_MAINNET",
+            "to_address": "TQrY8bYc2yQ8sM8nJ1sZ9c2Zx7L2wq7pQb",
+        }
+    ],
+    "meta": {"page": 1, "page_size": 20, "total": 1},
+}
 
 STATIC_WALLET = {
     "type": "static",
@@ -334,4 +355,72 @@ async def test_set_callback_url_response_still_carries_the_label():
     # The neighbouring updates answer with the same wallet shape, name included:
     # changing the webhook does not blank the name out of the response.
     assert out.label == "EU shop - order 4471"
+    await client.aclose()
+
+
+async def test_pay_in_history_decodes_into_the_payin_history_types():
+    captured: dict = {}
+    client = _client(captured, PAYIN_HISTORY_RESPONSE)
+
+    out = await client.wallets.pay_in_history("TQrY8bYc2yQ8sM8nJ1sZ9c2Zx7L2wq7pQb")
+
+    assert str(captured["request"].url).endswith("/v1/wallets/history")
+    assert isinstance(out, PayInHistoryResponse)
+    assert out.items is not None
+    order = out.items[0]
+    assert isinstance(order, PayIn)
+    assert order.order_id == "invoice-1002"
+    assert order.status == "paid"
+    assert order.payment_network == "TRON_MAINNET"
+    assert out.meta is not None
+    assert (out.meta.page, out.meta.page_size, out.meta.total) == (1, 20, 1)
+    await client.aclose()
+
+
+async def test_pay_in_history_sends_the_address_and_omits_unset_filters():
+    captured: dict = {}
+    client = _client(captured, PAYIN_HISTORY_RESPONSE)
+
+    await client.wallets.pay_in_history("0xAbCdEf")
+
+    # The address is the only required field; the dates and paging are the
+    # server's defaults until the caller says otherwise, so they stay off the
+    # wire rather than going out as empty strings.
+    assert _body(captured) == {"address": "0xAbCdEf"}
+    await client.aclose()
+
+
+async def test_pay_in_history_passes_the_date_window_and_paging_through():
+    captured: dict = {}
+    client = _client(captured, PAYIN_HISTORY_RESPONSE)
+
+    await client.wallets.pay_in_history(
+        "0xAbCdEf",
+        date_from="2026-01-01T00:00:00+00:00",
+        date_to="2026-02-01T00:00:00+00:00",
+        page=2,
+        page_size=100,
+    )
+
+    assert _body(captured) == {
+        "address": "0xAbCdEf",
+        "date_from": "2026-01-01T00:00:00+00:00",
+        "date_to": "2026-02-01T00:00:00+00:00",
+        "page": 2,
+        "page_size": 100,
+    }
+    await client.aclose()
+
+
+async def test_pay_in_history_of_a_foreign_address_is_an_empty_page():
+    captured: dict = {}
+    # Not an error: an address the project does not own simply has no orders of
+    # yours on it, which is a 200 with nothing in it.
+    client = _client(captured, {"items": [], "meta": {"page": 1, "page_size": 20, "total": 0}})
+
+    out = await client.wallets.pay_in_history("0xSomeoneElses")
+
+    assert out.items == []
+    assert out.meta is not None
+    assert out.meta.total == 0
     await client.aclose()

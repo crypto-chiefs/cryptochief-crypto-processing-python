@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from .._models import from_dict
 from ..errors import CryptoChiefError
 from .base import BaseService
+from .payins import PayInHistoryResponse
 
 
 class WalletType(str, Enum):
@@ -92,6 +93,45 @@ class WalletsService(BaseService):
     async def info(self, address: str) -> Wallet:
         """Details and current balances of one wallet."""
         return from_dict(Wallet, await self._post("/v1/wallets/info", {"address": address}))
+
+    async def pay_in_history(
+        self,
+        address: str,
+        *,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        page: Optional[int] = None,
+        page_size: Optional[int] = None,
+    ) -> PayInHistoryResponse:
+        """Every pay-in that used one deposit address.
+
+        ``/v1/wallets/history`` - the same records
+        :meth:`~cryptochief.PayInsService.history` returns, in the same
+        :class:`~cryptochief.PayInHistoryResponse` shape, narrowed to a single
+        wallet. Worth having when a payer says they sent funds and you have the
+        address but not the order: a deposit wallet can serve several orders
+        over its lifetime, and this is the list of them.
+
+        ``address`` is matched case-insensitively, so either spelling of an EVM
+        address works. Only orders belonging to your project are returned - an
+        address you do not own yields an empty page rather than an error, so an
+        empty ``items`` does not by itself mean the address was never paid.
+
+        The dates are ``YYYY-MM-DDTHH:MM:SS+HH:MM`` and filter on creation time;
+        both are optional here, unlike on
+        :meth:`~cryptochief.PayInsService.history`. ``page_size`` defaults to 20
+        and caps at 100.
+        """
+        body: dict[str, Any] = {"address": address}
+        if date_from is not None:
+            body["date_from"] = date_from
+        if date_to is not None:
+            body["date_to"] = date_to
+        if page is not None:
+            body["page"] = page
+        if page_size is not None:
+            body["page_size"] = page_size
+        return from_dict(PayInHistoryResponse, await self._post("/v1/wallets/history", body))
 
     async def freeze(self, address: str) -> Wallet:
         """Toggle the frozen flag - the response's ``frozen`` field is the new state."""
