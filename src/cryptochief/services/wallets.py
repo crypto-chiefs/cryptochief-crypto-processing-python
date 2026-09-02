@@ -119,10 +119,11 @@ class WalletsService(BaseService):
         (``master_wallet_frozen``), since sweeping into a frozen master would
         strand the funds there.
 
-        These tokens arrive in the error MESSAGE, not as a machine-readable
-        code: the gateway answers ``{"error": "SERVICE_ERROR", "msg": "<token>"}``
-        for every upstream refusal, so branch on the message if you must branch,
-        and do not expect them in ``APIError.code``. Memo/tag-based families share one deposit
+        The gateway relays every upstream refusal as
+        ``{"error": "SERVICE_ERROR", "msg": "<token>"}``, and the SDK reports
+        that token as ``APIError.code`` - so branch on the code, not on the
+        message text. These tokens are per-endpoint and are not
+        :class:`~cryptochief.ErrorCode` members. Memo/tag-based families share one deposit
         account across orders and are excluded
         (``shared_transit_cannot_be_rebound``). Both addresses resolve against
         the authenticated project, so one that is not yours answers

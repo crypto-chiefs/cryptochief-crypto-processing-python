@@ -19,19 +19,27 @@ class CryptoChiefError(Exception):
 class APIError(CryptoChiefError):
     """A typed Crypto Chief error response.
 
-    The API returns either ``{"error": "SERVICE_ERROR", "msg": "<CODE>", ...}``
-    (then :attr:`code` is ``<CODE>``) or ``{"error": "<CODE>", ...}`` (then
-    :attr:`code` is that value). Either way :attr:`code` is the stable
-    identifier to branch on::
+    :attr:`code` is the machine-readable identifier to branch on, whichever
+    envelope shape the refusal arrived in: the gateway's own refusals carry the
+    code in ``error`` and an English sentence in ``msg``
+    (``{"error": "LABEL_TOO_LONG", "msg": "label is longer than 255 characters"}``),
+    while a relayed upstream refusal carries the generic ``SERVICE_ERROR``
+    marker in ``error`` and the code in ``msg``
+    (``{"error": "SERVICE_ERROR", "msg": "wallet_not_found"}``). Both resolve to
+    :attr:`code`::
 
         try:
             await client.payouts.execute(req)
         except APIError as e:
             if e.code == ErrorCode.INSUFFICIENT_FUNDS:
                 ...  # top up and retry
+
+    :attr:`message` is the human-readable half - the sentence when the gateway
+    sent one - and :attr:`raw` is the untouched response body.
     """
 
     code: str
+    message: str
     http_status: int
     raw: Optional[str]
 
@@ -46,6 +54,7 @@ class APIError(CryptoChiefError):
         # Normalize an ErrorCode member to its wire string ("NETWORK_ERROR"),
         # not its enum repr ("ErrorCode.NETWORK_ERROR").
         self.code = code.value if isinstance(code, Enum) else str(code)
+        self.message = message or ""
         self.http_status = http_status
         self.raw = raw
         super().__init__(self._format(http_status, self.code, message))
@@ -75,10 +84,11 @@ class ErrorCode(str, Enum):
     ORDER_NOT_LIVE = "ORDER_NOT_LIVE"
     ASSET_ALREADY_SELECTED = "ASSET_ALREADY_SELECTED"
     INVALID_PARAMS = "INVALID_PARAMS"
-    #: A wallet label over 255 characters. A real machine code from the gateway,
-    #: unlike the upstream refusals that arrive as SERVICE_ERROR with the detail
-    #: in the message.
+    #: A wallet label over 255 characters.
     LABEL_TOO_LONG = "LABEL_TOO_LONG"
+    #: The gateway's marker for a refusal relayed from an upstream service; the
+    #: machine code then travels in ``msg`` and is what :attr:`APIError.code`
+    #: reports, so this member is rarely what you compare against.
     SERVICE_ERROR = "SERVICE_ERROR"
     UNAUTHORIZED = "UNAUTHORIZED"
     URL_CALLBACK_REQUIRED = "URL_CALLBACK_REQUIRED"

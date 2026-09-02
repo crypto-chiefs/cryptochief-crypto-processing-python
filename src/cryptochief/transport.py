@@ -8,11 +8,26 @@ import random
 from .errors import APIError, ErrorCode
 
 
+def _field(env: dict, key: str) -> str:
+    """Read ``key`` from an error envelope as a trimmed string (``""`` if absent)."""
+    value = env.get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
 def parse_api_error(status: int, body: str) -> APIError:
     """Parse a non-2xx response body into an :class:`APIError` with a stable code.
 
-    The code is ``msg or error or HTTP_<status>``, and the message prefers
-    ``msg`` when it differs from ``error``.
+    Refusals arrive in two envelope shapes. When the gateway itself refuses, the
+    machine code is in ``error`` and ``msg`` holds an English sentence
+    (``{"error": "LABEL_TOO_LONG", "msg": "label is longer than 255 characters"}``).
+    When it relays an upstream refusal, ``error`` is the generic
+    ``SERVICE_ERROR`` marker and the machine code is in ``msg``
+    (``{"error": "SERVICE_ERROR", "msg": "wallet_not_found"}``).
+
+    So the code is ``error`` unless that is ``SERVICE_ERROR``, in which case it
+    is ``msg``; an empty result falls back to ``error`` and then
+    ``HTTP_<status>``. The human-readable message prefers ``msg`` and falls back
+    to ``error``.
     """
     env: dict = {}
     try:
@@ -21,11 +36,16 @@ def parse_api_error(status: int, body: str) -> APIError:
             env = parsed
     except ValueError:
         pass  # non-JSON error body -> fall back to HTTP_<status>
-    code = env.get("msg") or env.get("error") or f"HTTP_{status}"
-    message = env.get("error") or ""
-    if env.get("msg") and env.get("msg") != env.get("error"):
-        message = env.get("msg")
-    return APIError(code, http_status=status, message=message, raw=body)
+
+    error = _field(env, "error")
+    msg = _field(env, "msg")
+    code = error if error and error != ErrorCode.SERVICE_ERROR else (msg or error)
+    return APIError(
+        code or f"HTTP_{status}",
+        http_status=status,
+        message=msg or error,
+        raw=body,
+    )
 
 
 def backoff_delay(attempt: int, base_ms: float, max_ms: float) -> float:

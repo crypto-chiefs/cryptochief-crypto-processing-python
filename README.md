@@ -263,8 +263,11 @@ the sender IPs in `WEBHOOK_SENDER_IPS` at your edge for defense in depth.
 ## Errors
 
 Everything the SDK raises derives from `CryptoChiefError`. API failures are
-`APIError` with a stable `.code` (and `.http_status`); branch on `ErrorCode`
-rather than parsing messages. 5xx and network errors are retried automatically;
+`APIError` with a stable `.code` (plus `.message`, `.http_status` and the
+untouched `.raw` body); branch on `ErrorCode` rather than parsing messages. Both
+envelope shapes the gateway sends - its own refusals, which carry the code in
+`error`, and refusals relayed from upstream as `SERVICE_ERROR` with the code in
+`msg` - resolve to `.code`. 5xx and network errors are retried automatically;
 4xx is raised immediately.
 
 ```python
