@@ -20,6 +20,13 @@ from .sign import canonical_json, sign
 #: Case-insensitive header name carrying the webhook signature.
 WEBHOOK_HEADER = "Signature"
 
+#: Header carrying the delivery's uuid on every webhook the platform sends.
+#: Constant across every attempt and resend of one delivery - use it as your
+#: receiver's idempotency key - and the argument ``client.webhooks.info()`` /
+#: ``resend()`` take. Keep it when you log an incoming webhook: there is no
+#: other way to name a delivery later.
+WEBHOOK_DELIVERY_HEADER = "X-Webhook-Delivery"
+
 #: IP addresses Crypto Chief delivers webhooks from - whitelist for defense in depth.
 WEBHOOK_SENDER_IPS = ("164.90.231.203", "104.248.248.64")
 

@@ -17,6 +17,7 @@ from .services.currencies import CurrenciesService
 from .services.payins import PayInsService
 from .services.payouts import PayoutsService
 from .services.static_deposits import StaticDepositsService
+from .services.webhooks import WebhooksService
 from .services.sweeps import SweepsService
 from .services.transactions import TransactionsService
 from .services.wallets import WalletsService
@@ -98,6 +99,7 @@ class CryptoChiefClient:
         self.blockchain = BlockchainService(self)
         self.currencies = CurrenciesService(self)
         self.credits = CreditsService(self)
+        self.webhooks = WebhooksService(self)
 
     async def request(self, path: str, body: Any = None) -> Any:
         """Low-level signed POST against an API path (e.g. ``/v1/payout/estimate``).

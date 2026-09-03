@@ -118,6 +118,15 @@ from .services.static_deposits import (
     StaticDepositsService,
     StaticDepositStatus,
 )
+from .services.webhooks import (
+    StaticDepositResendResult,
+    WebhookAttempt,
+    WebhookDelivery,
+    WebhookDeliveryStatus,
+    WebhookPayload,
+    WebhookResendResult,
+    WebhooksService,
+)
 from .sentinels import CLEAR, Clear
 from .services.sweeps import (
     ForceSweepResponse,
@@ -173,6 +182,7 @@ from .ton import (
     ton_address_to_string,
 )
 from .webhook import (
+    WEBHOOK_DELIVERY_HEADER,
     WEBHOOK_HEADER,
     WEBHOOK_SENDER_IPS,
     PayInWebhookEvent,
@@ -250,6 +260,14 @@ __all__ = [
     "SweepsService",
     "WithdrawalsService",
     "StaticDepositsService",
+    "StaticDepositResendResult",
+    "WebhookAttempt",
+    "WebhookDelivery",
+    "WebhookDeliveryStatus",
+    "WebhookPayload",
+    "WebhookResendResult",
+    "WebhooksService",
+    "WEBHOOK_DELIVERY_HEADER",
     "BlockchainService",
     "CurrenciesService",
     "CreditsService",

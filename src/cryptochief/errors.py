@@ -86,6 +86,20 @@ class ErrorCode(str, Enum):
     INVALID_PARAMS = "INVALID_PARAMS"
     #: A wallet label over 255 characters.
     LABEL_TOO_LONG = "LABEL_TOO_LONG"
+    #: The object does not exist OR is not this project's - deliberately
+    #: indistinguishable.
+    NOT_FOUND = "NOT_FOUND"
+    #: Webhook resend: a newer event exists for the same object; only the latest
+    #: may be resent. Permanent.
+    DELIVERY_SUPERSEDED = "DELIVERY_SUPERSEDED"
+    #: Webhook resend: a worker holds the delivery, or it is already scheduled
+    #: for an automatic retry.
+    DELIVERY_IN_FLIGHT = "DELIVERY_IN_FLIGHT"
+    #: Webhook resend: resent under a minute ago (HTTP 429, ``Retry-After``).
+    RESEND_TOO_SOON = "RESEND_TOO_SOON"
+    #: Static-deposit resend: no webhook was ever queued - the wallet had no
+    #: ``callback_url``.
+    NO_DELIVERIES = "NO_DELIVERIES"
     #: The gateway's marker for a refusal relayed from an upstream service; the
     #: machine code then travels in ``msg`` and is what :attr:`APIError.code`
     #: reports, so this member is rarely what you compare against.
