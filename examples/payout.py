@@ -52,8 +52,15 @@ async def main() -> None:
             raise
 
         print("payout uuid:", payout.uuid, "status:", payout.status)
-        final = await client.payouts.wait_for(payout.uuid, timeout=300)
-        print("final status:", final.status, "txid:", final.txid)
+        final = await client.payouts.wait_for(payout.uuid, timeout=900)
+        print(
+            "final status:",
+            final.status,
+            "txids:",
+            [s.txid for s in final.sources or [] if s.txid],
+            "confirmations:",
+            f"{final.confirmations}/{final.required_confirmations}",
+        )
 
 
 if __name__ == "__main__":

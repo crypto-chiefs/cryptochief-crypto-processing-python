@@ -44,10 +44,11 @@ async def main() -> None:
         # gather and the report below stay aligned - rejected items have no uuid to poll.
         accepted = [(it, it.uuid) for it in (result.items or []) if it.uuid]
         finals = await asyncio.gather(
-            *(client.payouts.wait_for(uuid, timeout=300) for _, uuid in accepted)
+            *(client.payouts.wait_for(uuid, timeout=900) for _, uuid in accepted)
         )
         for (it, _), final in zip(accepted, finals):
-            print(f"  {it.order_id}: {final.status} {final.txid or ''}")
+            txids = " ".join(s.txid for s in final.sources or [] if s.txid)
+            print(f"  {it.order_id}: {final.status} {txids}")
 
 
 if __name__ == "__main__":

@@ -69,7 +69,7 @@ async def main() -> None:
             return
 
         await client.transactions.execute(ExecuteTransactionRequest(uuid=approve.uuid))
-        approved = await client.transactions.wait_for(approve.uuid, timeout=480)
+        approved = await client.transactions.wait_for(approve.uuid, timeout=900)
         if approved.status != TxStatus.CONFIRMED:
             raise SystemExit(f"approve did not confirm: status={approved.status}")
         print("approve confirmed:", approved.tx_hash)
@@ -92,7 +92,7 @@ async def main() -> None:
         print("signed swap:", signed.uuid, "tx_hash:", signed.tx_hash)
 
         await client.transactions.execute(ExecuteTransactionRequest(uuid=signed.uuid))
-        final = await client.transactions.wait_for(signed.uuid, timeout=480)
+        final = await client.transactions.wait_for(signed.uuid, timeout=900)
         print("terminal:", final.status, final.tx_hash)
 
 

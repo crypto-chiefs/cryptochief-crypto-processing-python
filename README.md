@@ -138,8 +138,9 @@ async def pay():
                 to_address="0xRecipient...",
                 url_callback="https://example.com/webhooks/crypto-chief",
             ))
-            final = await client.payouts.wait_for(payout.uuid, timeout=300)
-            print(final.status, final.txid)
+            final = await client.payouts.wait_for(payout.uuid, timeout=900)
+            txids = [s.txid for s in final.sources or [] if s.txid]
+            print(final.status, txids, final.confirmations, final.required_confirmations)
         except APIError as e:
             if e.code == ErrorCode.INSUFFICIENT_FUNDS:
                 ...  # top up and retry
@@ -377,6 +378,36 @@ priv = client.wallets.decrypt_private_key(wallet.private_key_encrypted)
   will offer assets that orders then refuse.
 - **How do I call a smart contract?** `client.transactions.sign_evm_call` /
   `sign_anchor_call` / `jetton_transfer`, then `transactions.execute`.
+- **How many confirmations does a transaction have?** `TransactionInfo` and
+  `TransactionWebhookEvent` carry `confirmations` and `required_confirmations`.
+  `confirmations` is 0 until the transaction is in a block and grows while it
+  is `broadcasted`; at `required_confirmations` it turns `confirmed`.
+  `transaction.*` webhooks are sent only on final statuses, so poll
+  `transactions.info` to follow the count.
+- **How many confirmations does a payout have?** `PayoutInfo` and
+  `PayoutWebhookEvent` carry `confirmations` on each of `sources` and
+  `service_operations`, a top-level `confirmations` (the lowest among sources
+  with a transaction; a sent source not yet in a block counts as 0) and
+  `required_confirmations`, all optional. The payout is `confirm_check` until
+  every source reaches `required_confirmations`, then `paid`.
+- **When is a withdrawal final?** At `WithdrawalStatus.COMPLETED` or `FAILED`;
+  funds are delivered only at `COMPLETED`. `CANCELLED` is not produced by the
+  API. Until its transaction
+  reaches `required_confirmations`, the withdrawal is
+  `WithdrawalStatus.CONFIRM_CHECK`; `confirmations` is optional. Withdrawals
+  have no webhooks.
+
+  ```python
+  from cryptochief import WithdrawalStatus
+
+  wd = await client.withdrawals.info(uuid)
+  if wd.status == WithdrawalStatus.COMPLETED:
+      ...
+  elif wd.status == WithdrawalStatus.CONFIRM_CHECK:
+      print(f"{wd.confirmations or 0}/{wd.required_confirmations} confirmations")
+  elif wd.status == WithdrawalStatus.FAILED:
+      print(wd.status, wd.error_reason)
+  ```
 - **How do I control when a deposit wallet is swept?**
   `client.sweeps.settings(...)` reads the policy in force for one wallet and
   `client.sweeps.update_settings(...)` changes it - sweep on arrival
@@ -435,14 +466,13 @@ priv = client.wallets.decrypt_private_key(wallet.private_key_encrypted)
   await client.sweeps.history(SweepHistoryQuery(search=tx_hash))
   ```
 - **How do I know a sweep actually settled?** `status` is
-  `SweepStatus.COMPLETED` **and** `sweep_confirmations` is above zero.
-  `SweepStatus.BROADCASTED` means the transaction is out and not yet confirmed,
-  and earlier platform versions reported `completed` at broadcast, so a sweep
-  could read as settled while its transaction was still unconfirmed - the
-  confirmation count separates the two. **Do not read `completed_at` as
-  settlement:** it is stamped when the sweep reached a terminal outcome,
-  failures included, so a `SweepStatus.FAILED` sweep carries one too. The
-  moment the chain was seen holding the funds arrives separately, as
+  `SweepStatus.COMPLETED` and `sweep_confirmations` is above zero. On older
+  records a `completed` sweep can have `0`: it is not settled.
+  `sweep_confirmations` grows while the sweep is `SweepStatus.BROADCASTED`; at
+  `required_confirmations` the sweep turns `completed`. **Do not read
+  `completed_at` as settlement:** it is the broadcast time (for `waiting_gas`,
+  `failed`, `skipped`, the time that status was recorded) and is not updated on
+  `completed`. The moment the chain was seen holding the funds is
   `confirmed_at` on the `sweep.confirmed` webhook.
 - **My deposits are settling on the wrong master wallet.**
   `client.wallets.rebind_master(address, master_wallet_address)` re-points a

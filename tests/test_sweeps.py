@@ -18,6 +18,7 @@ from cryptochief import (
     CreatePayInRequest,
     CryptoChiefClient,
     Environment,
+    Sweep,
     SweepGasSource,
     SweepHistoryQuery,
     SweepPolicyMode,
@@ -248,6 +249,8 @@ async def test_history_tells_a_broadcast_a_settled_and_a_failed_sweep_apart():
                     "wallet_address": "0xa",
                     "chain": "ETH_MAINNET",
                     "sweep_confirmations": 2,
+                    "required_confirmations": 12,
+                    "completed_at": "2026-08-28T09:58:00Z",
                     "type_work": "threshold",
                     "total_fee_usd": "1.20",
                 },
@@ -257,6 +260,7 @@ async def test_history_tells_a_broadcast_a_settled_and_a_failed_sweep_apart():
                     "wallet_address": "0xb",
                     "chain": "ETH_MAINNET",
                     "sweep_confirmations": 12,
+                    "required_confirmations": 12,
                     "completed_at": "2026-08-28T10:00:00Z",
                     "real_sweep_fee_usd": "0.98",
                 },
@@ -266,35 +270,60 @@ async def test_history_tells_a_broadcast_a_settled_and_a_failed_sweep_apart():
                     "wallet_address": "0xc",
                     "chain": "ETH_MAINNET",
                     "sweep_confirmations": 0,
+                    "required_confirmations": 12,
                     "completed_at": "2026-08-28T10:05:00Z",
                 },
+                {
+                    "task_id": "t4",
+                    "status": "completed",
+                    "wallet_address": "0xd",
+                    "chain": "ETH_MAINNET",
+                    "sweep_confirmations": 0,
+                    "required_confirmations": 12,
+                    "completed_at": "2026-05-01T08:00:00Z",
+                },
             ],
-            "meta": {"total": 3, "page": 1, "page_size": 50},
+            "meta": {"total": 4, "page": 1, "page_size": 50},
         },
     )
 
     out = await client.sweeps.history()
 
+    def is_settled(s: Sweep) -> bool:
+        return s.status == SweepStatus.COMPLETED.value and (s.sweep_confirmations or 0) > 0
+
     assert out.items is not None
-    in_flight, settled, failed = out.items
+    in_flight, settled, failed, legacy = out.items
+    assert [is_settled(s) for s in out.items] == [False, True, False, False]
     assert in_flight.status == SweepStatus.BROADCASTED.value
+    # In a block and counting, but short of the network's finality depth: a
+    # count above zero is not settlement.
     assert in_flight.sweep_confirmations == 2
-    # Absent only because the task has not ended yet.
-    assert in_flight.completed_at is None
+    assert in_flight.required_confirmations == 12
+    assert in_flight.sweep_confirmations < in_flight.required_confirmations
+    # Stamped at broadcast, so it is already there while the sweep counts
+    # toward the finality depth: its presence is not settlement either.
+    assert in_flight.completed_at == "2026-08-28T09:58:00Z"
     assert in_flight.type_work == "threshold"
     assert in_flight.total_fee_usd == "1.20"
     assert settled.status == SweepStatus.COMPLETED.value
     assert settled.completed_at == "2026-08-28T10:00:00Z"
     assert settled.real_sweep_fee_usd == "0.98"
 
-    # completed_at is stamped at every terminal outcome, failures included, so
-    # a failed sweep carries one exactly like the settled one - reading its
-    # presence as "settled" books this as money received. sweep_confirmations
-    # is what separates them.
+    # completed_at is the broadcast time (for failed, the time that status was
+    # recorded), so a failed sweep carries one exactly like the settled one -
+    # reading its presence as "settled" books this as money received. The
+    # status - which turns completed only at the finality depth - is what
+    # separates them.
     assert failed.status == SweepStatus.FAILED.value
     assert failed.completed_at == "2026-08-28T10:05:00Z"
     assert failed.sweep_confirmations == 0
-    assert (settled.sweep_confirmations or 0) > 0
+    assert settled.sweep_confirmations == settled.required_confirmations == 12
+
+    # An older record: completed with 0 confirmations is not settled.
+    assert legacy.status == SweepStatus.COMPLETED.value
+    assert legacy.sweep_confirmations == 0
+    assert legacy.required_confirmations == 12
 
 
 async def test_environment_reaches_the_wire_and_is_omitted_when_unset():
@@ -323,3 +352,31 @@ async def test_environment_reaches_the_wire_and_is_omitted_when_unset():
     # Unset must stay off the wire: an empty string is a value the platform has
     # to reject, not the "use the project default" the caller meant.
     assert "environment" not in _body(captured2)
+
+
+async def test_history_without_required_confirmations_reads_it_as_unknown():
+    # A server that predates the field sends no depth; the item still decodes
+    # and the depth reads as unknown rather than zero.
+    captured: dict = {}
+    client = _client(
+        captured,
+        {
+            "items": [
+                {
+                    "task_id": "t1",
+                    "status": "completed",
+                    "wallet_address": "0xa",
+                    "chain": "ETH_MAINNET",
+                    "sweep_confirmations": 1,
+                }
+            ],
+            "meta": {"total": 1, "page": 1, "page_size": 50},
+        },
+    )
+
+    out = await client.sweeps.wallet_history("0xa")
+
+    assert out.items is not None
+    (item,) = out.items
+    assert item.sweep_confirmations == 1
+    assert item.required_confirmations is None

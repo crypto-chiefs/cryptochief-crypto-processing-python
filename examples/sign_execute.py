@@ -41,8 +41,13 @@ async def main() -> None:
         info = await client.transactions.execute(ExecuteTransactionRequest(uuid=signed.uuid))
         print("broadcasted:", info.status, info.tx_hash)
 
-        final = await client.transactions.wait_for(signed.uuid, timeout=300)
-        print("final:", final.status, final.tx_hash)
+        final = await client.transactions.wait_for(signed.uuid, timeout=900)
+        print(
+            "final:",
+            final.status,
+            final.tx_hash,
+            f"confirmations={final.confirmations}/{final.required_confirmations}",
+        )
 
 
 if __name__ == "__main__":

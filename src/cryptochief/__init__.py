@@ -172,7 +172,12 @@ from .services.wallets import (
     WalletsService,
     WalletType,
 )
-from .services.withdrawals import Withdrawal, WithdrawalHistoryResponse, WithdrawalsService
+from .services.withdrawals import (
+    Withdrawal,
+    WithdrawalHistoryResponse,
+    WithdrawalsService,
+    WithdrawalStatus,
+)
 from .sign import canonical_json, sign, sign_value
 from .ton import (
     TonAddress,
@@ -334,6 +339,7 @@ __all__ = [
     # Withdrawal types
     "Withdrawal",
     "WithdrawalHistoryResponse",
+    "WithdrawalStatus",
     # Static deposit types
     "StaticDeposit",
     "StaticDepositHistoryQuery",

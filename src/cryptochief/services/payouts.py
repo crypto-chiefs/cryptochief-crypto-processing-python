@@ -14,8 +14,27 @@ from .base import BaseService
 
 
 class PayoutStatus(str, Enum):
+    """Payout status.
+
+    - ``QUEUE`` - accepted, not started.
+    - ``REFUELING`` - gas top-up of a source wallet in progress.
+    - ``REFUEL_CONFIRMED`` - top-up confirmed or not needed; sending next.
+    - ``SENDING`` - payout transactions being sent.
+    - ``BROADCASTING`` - waiting to be broadcast (EVM networks).
+    - ``IN_MEMPOOL`` - broadcast, waiting for a block (BTC-family networks).
+    - ``CONFIRM_CHECK`` - sent; some source is below ``required_confirmations``.
+    - ``PAID`` - every source reached ``required_confirmations``. Final.
+    - ``SYSTEM_FAIL`` - failed. Final.
+    """
+
     QUEUE = "queue"
     PROCESS = "process"
+    REFUELING = "refueling"
+    REFUEL_CONFIRMED = "refuel_confirmed"
+    SENDING = "sending"
+    BROADCASTING = "broadcasting"
+    IN_MEMPOOL = "in_mempool"
+    CONFIRM_CHECK = "confirm_check"
     PAID = "paid"
     FAILED = "failed"
     SYSTEM_FAIL = "system_fail"
@@ -65,8 +84,22 @@ class PayoutFeeInfo:
 @dataclass(kw_only=True)
 class PayoutSource:
     address: Optional[str] = None
-    amount: Optional[str] = None
+    network: Optional[str] = None
     coin: Optional[str] = None
+    #: Amount sent from this source, human units.
+    amount_crypto: Optional[str] = None
+    #: Deprecated: not sent by the platform. Use ``amount_crypto``.
+    amount: Optional[str] = None
+    need_refuel: Optional[bool] = None
+    refuel_amount: Optional[str] = None
+    estimated_fee: Optional[str] = None
+    estimated_fee_fiat: Optional[str] = None
+    fee_paid: Optional[str] = None
+    fee_paid_fiat: Optional[str] = None
+    #: Transaction of this source. Absent until it is sent.
+    txid: Optional[str] = None
+    #: Confirmations of this source's transaction. Absent until it is on chain.
+    confirmations: Optional[int] = None
 
 
 @dataclass(kw_only=True)
@@ -91,8 +124,18 @@ class PayoutInfo:
     coin: Optional[str] = None
     amount: Optional[str] = None
     to_address: Optional[str] = None
+    #: Deprecated: not sent by the platform. Use ``sources[].txid``.
     txid: Optional[str] = None
     sources: Optional[List[PayoutSource]] = None
+    #: Service transactions, such as a gas top-up. Each carries ``confirmations``
+    #: once it is on chain.
+    service_operations: Optional[List[Dict[str, Any]]] = None
+    #: The lowest ``confirmations`` among sources that have a ``txid``; a source
+    #: without a count counts as 0. ``None`` while no source has a transaction.
+    confirmations: Optional[int] = None
+    #: Confirmations each source needs. The payout is ``confirm_check`` until
+    #: every source reaches it, then ``paid``. Optional.
+    required_confirmations: Optional[int] = None
     url_callback: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -163,9 +206,13 @@ class PayoutsService(BaseService):
         return from_dict(BatchPayoutResponse, await self._post("/v1/payout/batch/execute", req))
 
     async def wait_for(
-        self, uuid: str, *, interval: float = 5.0, timeout: float = 600.0
+        self, uuid: str, *, interval: float = 5.0, timeout: float = 5400.0
     ) -> PayoutInfo:
-        """Poll ``info`` until the payout reaches a terminal state (or timeout)."""
+        """Poll ``info`` until the payout reaches a terminal state (or timeout).
+
+        Default ``timeout`` is 5400 s. The payout stays ``confirm_check`` until
+        every source reaches ``required_confirmations``.
+        """
 
         async def fetch() -> PayoutInfo:
             return await self.info(uuid)

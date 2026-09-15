@@ -42,13 +42,12 @@ class SweepHistoryQuery:
 class SweepStatus(str, Enum):
     """A sweep is broadcast first and confirmed after.
 
-    ``BROADCASTED`` means the transaction is out and not yet confirmed;
-    ``COMPLETED`` means the chain confirmed it. The platform used to report
-    ``completed`` at broadcast, so a sweep could read as settled while its
-    transaction was still unconfirmed or had been dropped. ``COMPLETED``
-    together with a ``sweep_confirmations`` above zero is the settlement signal;
-    ``Sweep.completed_at`` is not one, since it is stamped at every terminal
-    outcome, ``FAILED`` included.
+    ``BROADCASTED`` means the transaction is out and ``sweep_confirmations`` is
+    growing; ``COMPLETED`` means it reached ``required_confirmations``. On older
+    records a ``COMPLETED`` sweep can have ``sweep_confirmations`` 0: such a
+    sweep is not settled. Settled: ``COMPLETED`` and ``sweep_confirmations``
+    above zero. ``Sweep.completed_at`` is the broadcast time, not a settlement
+    signal.
 
     ``SKIPPED`` is a sweep the platform decided against - almost always a
     balance below the wallet's threshold. A normal outcome, not a failure.
@@ -134,20 +133,18 @@ class Sweep:
     #: What triggered this sweep: momentum, threshold or force.
     type_work: Optional[str] = None
 
-    #: Confirmations seen on the sweep transaction. **This** is the settlement
-    #: signal: above zero means the chain has the sweep.
+    #: Confirmations seen on the sweep transaction. Grows while the sweep is
+    #: ``broadcasted``.
     sweep_confirmations: Optional[int] = None
-    #: When the sweep reached a terminal outcome - **failures included**. The
-    #: sweeper stamps it at every ending, not only a successful one, so its
-    #: presence says the task finished and nothing about whether the money
-    #: moved: a ``failed`` sweep carries one too. Absent while still in flight,
-    #: which is why reading it as "present therefore settled" books a failed
-    #: sweep as money received.
+    #: Confirmations the sweep needs to turn ``completed``.
+    required_confirmations: Optional[int] = None
+    #: When the sweep was broadcast (``waiting_gas``, ``failed``, ``skipped``:
+    #: when that status was recorded). Not updated on ``completed``; not a
+    #: settlement signal.
     #:
-    #: To tell settlement apart, check ``sweep_confirmations`` is above zero, or
-    #: take ``confirmed_at`` from the sweep webhook
-    #: (:class:`~cryptochief.SweepWebhookEvent`) - it carries a separate
-    #: timestamp for exactly this reason.
+    #: Settlement: ``status`` is ``completed`` and ``sweep_confirmations`` is
+    #: above zero, or ``confirmed_at`` on the sweep webhook
+    #: (:class:`~cryptochief.SweepWebhookEvent`).
     completed_at: Optional[str] = None
 
     #: Fees. ``total_fee_usd`` is the whole cost of the sweep; the gas-pump half

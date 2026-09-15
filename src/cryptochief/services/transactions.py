@@ -37,7 +37,9 @@ class TxType(str, Enum):
 class TxStatus(str, Enum):
     SIGNED = "signed"
     BROADCASTING = "broadcasting"
+    #: Out on the network; ``confirmations`` grows.
     BROADCASTED = "broadcasted"
+    #: Reached ``required_confirmations``.
     CONFIRMED = "confirmed"
     FAILED = "failed"
     EXPIRED = "expired"
@@ -137,6 +139,10 @@ class TransactionInfo:
     coin: Optional[str] = None
     contract: Optional[str] = None
     tx_hash: Optional[str] = None
+    #: 0 until the transaction is in a block; grows while ``broadcasted``.
+    confirmations: Optional[int] = None
+    #: Confirmations needed to turn ``confirmed``.
+    required_confirmations: Optional[int] = None
     signed_tx_hex: Optional[str] = None
     expires_at: Optional[str] = None
     nonce: Optional[int] = None
@@ -277,7 +283,10 @@ class TransactionsService(BaseService):
     async def wait_for(
         self, uuid: str, *, interval: float = 5.0, timeout: float = 600.0
     ) -> TransactionInfo:
-        """Poll ``info`` until the transaction reaches a terminal state (or timeout)."""
+        """Poll ``info`` until the transaction reaches a terminal state (or timeout).
+
+        Size ``timeout`` for ``required_confirmations`` blocks.
+        """
 
         async def fetch() -> TransactionInfo:
             return await self.info(uuid)

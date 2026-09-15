@@ -49,7 +49,8 @@ def on_sweep_confirmed(event: SweepWebhookEvent) -> None:
     print(
         f"sweep {event.task_id}: {event.amount_human} {event.asset_symbol} "
         f"{event.wallet_address} -> {event.to_address} "
-        f"tx={event.sweep_tx_hash} confirmations={event.sweep_confirmations} "
+        f"tx={event.sweep_tx_hash} "
+        f"confirmations={event.sweep_confirmations}/{event.required_confirmations} "
         f"trigger={event.type_work} fee_usd={event.total_fee_usd}"
     )
 
@@ -82,9 +83,15 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if isinstance(event, PayoutWebhookEvent):
-            print(f"payout {event.uuid}: {event.status}")  # paid | system_fail
+            print(  # paid | system_fail
+                f"payout {event.uuid}: {event.status} "
+                f"confirmations={event.confirmations}/{event.required_confirmations}"
+            )
         elif isinstance(event, TransactionWebhookEvent):
-            print(f"transaction {event.uuid}: {event.status}")  # confirmed | failed | expired
+            print(  # confirmed | failed | expired
+                f"transaction {event.uuid}: {event.status} "
+                f"confirmations={event.confirmations}/{event.required_confirmations}"
+            )
         elif isinstance(event, PayInWebhookEvent):
             print(f"invoice {event.uuid}: {event.status}")  # paid | expired | ...
         elif isinstance(event, StaticDepositWebhookEvent):

@@ -105,8 +105,15 @@ class PayoutWebhookEvent:
     amount_to_receive: Optional[str] = None
     to_address: Optional[str] = None
     fee_info: Optional[Dict[str, Any]] = None
+    #: Each source carries ``confirmations`` once its transaction is on chain.
     sources: Optional[Any] = None
+    #: Each service transaction carries ``confirmations`` once it is on chain.
     service_operations: Optional[Any] = None
+    #: The lowest ``confirmations`` among sources that have a ``txid``; a source
+    #: without a count counts as 0. ``None`` while no source has a transaction.
+    confirmations: Optional[int] = None
+    #: Confirmations each source needed before ``paid``. Optional.
+    required_confirmations: Optional[int] = None
     created_at: Optional[str] = None
     completed_at: Optional[str] = None
     error_reason: Optional[str] = None
@@ -127,6 +134,10 @@ class TransactionWebhookEvent:
     value: Optional[str] = None
     contract: Optional[str] = None
     tx_hash: Optional[str] = None
+    #: Confirmations at the final status.
+    confirmations: Optional[int] = None
+    #: Confirmations needed to turn ``confirmed``.
+    required_confirmations: Optional[int] = None
     created_at: Optional[str] = None
     completed_at: Optional[str] = None
     error_reason: Optional[str] = None
@@ -192,6 +203,8 @@ SWEEP_EVENT_CONFIRMED = "sweep.confirmed"
 class SweepWebhookEvent:
     """Funds swept off a deposit wallet, confirmed on chain.
 
+    Sent once ``sweep_confirmations`` reaches ``required_confirmations``.
+
     A ``static_deposit.paid`` tells you a customer paid you. This tells you the
     money has finished moving into your own custody - until it fires, the
     balance still sits on the deposit address. Reconciliation, treasury
@@ -232,10 +245,11 @@ class SweepWebhookEvent:
     #: not the same number on every chain, so if you run your own finality
     #: policy you need the count to apply it.
     sweep_confirmations: int = 0
+    #: Confirmations the sweep needed before this event. Optional.
+    required_confirmations: Optional[int] = None
 
-    #: When the chain was observed to hold the sweep. NOT the task's completion
-    #: timestamp, which is stamped on every terminal outcome - failures
-    #: included - and so says nothing about settlement.
+    #: When the chain was observed to hold the sweep. Not the history's
+    #: ``completed_at``, which is the broadcast time.
     confirmed_at: Optional[str] = None
 
     #: What triggered it: ``"momentum"``, ``"threshold"`` or ``"force"``.
