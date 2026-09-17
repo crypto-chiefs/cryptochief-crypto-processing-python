@@ -18,6 +18,7 @@ import json
 import httpx
 
 from cryptochief import CryptoChiefClient, CryptoCurrencies, FiatCurrency
+from signed_request import assert_signed
 
 FIATS_RESPONSE = [
     {"code": "JMD", "name": "Jamaican Dollar"},
@@ -83,16 +84,15 @@ async def test_fiats_decodes_a_bare_top_level_array():
     await client.aclose()
 
 
-async def test_fiats_sends_an_empty_object_because_the_body_is_signed():
+async def test_fiats_sends_an_empty_object():
     captured: dict = {}
     client = _client(captured, FIATS_RESPONSE)
 
     await client.currencies.fiats()
 
-    # An empty body is still a body: it is what the Signature header is computed
-    # over, so `{}` has to go out rather than nothing at all.
+    # The endpoint takes a JSON object, so `{}` goes out rather than nothing at all.
     assert _body(captured) == {}
-    assert captured["request"].headers["Signature"]
+    assert_signed(captured["request"])
     await client.aclose()
 
 
@@ -151,14 +151,14 @@ async def test_cryptos_reports_the_union_the_count_and_the_quote_asset():
     await client.aclose()
 
 
-async def test_cryptos_sends_an_empty_object_because_the_body_is_signed():
+async def test_cryptos_sends_an_empty_object():
     captured: dict = {}
     client = _client(captured, CRYPTOS_RESPONSE)
 
     await client.currencies.cryptos()
 
     assert _body(captured) == {}
-    assert captured["request"].headers["Signature"]
+    assert_signed(captured["request"])
     await client.aclose()
 
 

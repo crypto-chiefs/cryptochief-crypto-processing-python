@@ -275,16 +275,94 @@ await client.transactions.sign_anchor_call(AnchorCallRequest(
 ))
 ```
 
+## Request signing
+
+Every request is signed with HMAC-SHA256 v1.
+
+| Header | Value |
+|---|---|
+| `Merchant` | `merchant_id` |
+| `X-CC-Timestamp` | Unix time, seconds |
+| `X-CC-Nonce` | 32 hex characters, new on every attempt |
+| `X-CC-Signature` | `v1=` + 64 lowercase hex |
+| `Idempotency-Key` | only when set: `client.request(..., idempotency_key="...")`, or `with idempotency_key("..."):` around any call |
+
+```
+string_to_sign = "CC-HMAC-SHA256-REQ-V1" \n timestamp \n nonce \n METHOD \n path \n
+                 query \n merchant \n idempotency_key \n hex(sha256(body))
+X-CC-Signature = "v1=" + hex(hmac_sha256(key=api_key, msg=string_to_sign))
+```
+
+- `path` is the API route (`/v1/payout/execute`) without the base URL, percent-decoded
+  as the server reads it; `query` is without `?`, raw as sent, empty if absent; `body` is
+  the exact bytes sent; `METHOD` is upper-cased in `a`-`z` only.
+- An `api_key` that is empty or only spaces and tabs is rejected by the client, by the
+  signers and by webhook verification.
+- `Idempotency-Key` is printable ASCII without leading or trailing spaces or tabs;
+  anything else raises `CryptoChiefError` before the request is sent.
+- `client.request(path, body, method="GET")` signs and sends any method - the low-level
+  way to reach an endpoint the SDK does not model; service calls stay as they are.
+- Timestamp, nonce and signature are recomputed on every retry.
+- On `SIGNATURE_TIMESTAMP_OUT_OF_RANGE` the client sets its clock offset from
+  `server_time` and retries once.
+
+```python
+from cryptochief import hmac_v1_sign
+
+sig = hmac_v1_sign(
+    "K", timestamp=1789430400, nonce="0123456789abcdef0123456789abcdef",
+    method="POST", path="/v1/payout/info", merchant="M", body=b'{"uuid":"u1"}',
+)
+```
+
+The body is compact UTF-8 JSON. `None` fields of request models and `None` members
+of dicts, including dicts passed to `client.request`, are not sent; a `None` body
+is sent empty. Integers are sent exactly; a float with an integral value is sent as
+an integer (`2.0` as `2`). NaN, infinity and values JSON cannot represent raise
+`CryptoChiefError` before the request is sent.
+
 ## Webhooks
 
-`verify_webhook_signature` and `parse_webhook_event` are framework-agnostic - feed
-them the raw request bytes and the `Signature` header. With FastAPI:
+A webhook carries three headers:
+
+| Header | Value |
+|---|---|
+| `X-Webhook-Delivery` | delivery id, 1-128 characters `[A-Za-z0-9_-]`; the same on every attempt and resend |
+| `X-CC-Timestamp` | Unix time of the attempt, seconds, decimal without a leading zero |
+| `X-CC-Signature` | `v1=` + 64 hex |
+
+```
+string_to_sign = "CC-HMAC-SHA256-WEBHOOK-V1" \n X-CC-Timestamp \n X-Webhook-Delivery \n hex(sha256(body))
+X-CC-Signature = "v1=" + hex(hmac_sha256(key=api_key, msg=string_to_sign))
+```
+
+`verify_webhook(api_key, raw_body, headers, *, tolerance=300, now=None)` checks, in
+order:
+
+| Check | Exception |
+|---|---|
+| each header present once and well-formed; values trimmed of spaces and tabs only | `WebhookHeadersError` |
+| `abs(now - timestamp) <= tolerance` seconds | `WebhookTimestampError` |
+| signature, constant-time, hex in any case | `WebhookSignatureError` |
+
+All three derive from `WebhookVerificationError` (`.reason` is `"headers"`,
+`"timestamp"` or `"signature"`), which derives from `CryptoChiefError`. Answer 401
+on any of them. `raw_body` is the request body as received (`bytes` or `str`),
+read before JSON parsing. `headers` is any object with `items()` (`dict`,
+Starlette, Werkzeug, httpx or `http.server` headers) or a list of `(name, value)`
+pairs; names match ignoring ASCII case. `now` is Unix time in seconds, by default
+`time.time()`. An empty `api_key` or a `tolerance` or `now` that is not a finite
+number raises `CryptoChiefError` before the headers are read.
+
+`parse_webhook_event` takes the same arguments, verifies, then parses the raw body.
+With FastAPI:
 
 ```python
 from fastapi import FastAPI, Request, HTTPException
 from cryptochief import (
+    WEBHOOK_DELIVERY_HEADER,
     parse_webhook_event,
-    WebhookSignatureError,
+    WebhookVerificationError,
     PayInWebhookEvent,
     PayoutWebhookEvent,
 )
@@ -294,12 +372,13 @@ API_KEY = "..."
 
 @app.post("/webhooks/crypto-chief")
 async def hook(request: Request):
-    raw = await request.body()  # the EXACT bytes - do not re-encode
+    raw = await request.body()  # the exact bytes, before JSON parsing
     try:
-        event = parse_webhook_event(API_KEY, raw, request.headers.get("Signature"))
-    except WebhookSignatureError:
-        raise HTTPException(status_code=401, detail="bad signature")
+        event = parse_webhook_event(API_KEY, raw, request.headers)
+    except WebhookVerificationError:
+        raise HTTPException(status_code=401, detail="invalid webhook signature")
 
+    delivery_id = request.headers[WEBHOOK_DELIVERY_HEADER]  # idempotency key
     if isinstance(event, PayInWebhookEvent):
         if event.status == "paid":
             ...  # invoice.paid -> fulfill the order for event.order_id
@@ -309,19 +388,32 @@ async def hook(request: Request):
 ```
 
 `parse_webhook_event` returns a typed event (`PayoutWebhookEvent`,
-`TransactionWebhookEvent`, `PayInWebhookEvent`, `StaticDepositWebhookEvent`) chosen
-by the event-name prefix, or the raw dict for an unrecognized prefix. Whitelist
-the sender IPs in `WEBHOOK_SENDER_IPS` at your edge for defense in depth.
+`TransactionWebhookEvent`, `PayInWebhookEvent`, `StaticDepositWebhookEvent`,
+`SweepWebhookEvent`) chosen by the event-name prefix, or the dict for an
+unrecognized prefix. A verified body that is not a JSON object raises
+`CryptoChiefError`. `sign_webhook_v1(api_key, timestamp, delivery_id, body)` and
+`webhook_v1_string_to_sign(timestamp, delivery_id, body)` build the header value
+and the string to sign, for tests. Whitelist the sender IPs in `WEBHOOK_SENDER_IPS`
+at your edge for defense in depth.
 
 ## Errors
 
 Everything the SDK raises derives from `CryptoChiefError`. API failures are
 `APIError` with a stable `.code` (plus `.message`, `.http_status` and the
-untouched `.raw` body); branch on `ErrorCode` rather than parsing messages. Both
-envelope shapes the gateway sends - its own refusals, which carry the code in
-`error`, and refusals relayed from upstream as `SERVICE_ERROR` with the code in
-`msg` - resolve to `.code`. 5xx and network errors are retried automatically;
-4xx is raised immediately.
+untouched `.raw` body); branch on `ErrorCode` rather than parsing messages.
+`.code` is read from:
+
+| Response | Code |
+|---|---|
+| `{"ok":false,"error":"CODE","msg":"..."}` | `error` |
+| `{"ok":false,"error":"SERVICE_ERROR","msg":"CODE"}` | `msg` |
+| `{"data":null,"error":{"name":"...","message":"...","details":{"code":"CODE"}}}` | `error.details.code`, else `error.name` |
+| anything else | `HTTP_<status>` |
+
+`.server_time` is set on `SIGNATURE_TIMESTAMP_OUT_OF_RANGE`. 5xx and network
+errors are retried automatically; 4xx is raised immediately, except for one
+repeat after `SIGNATURE_TIMESTAMP_OUT_OF_RANGE` with the clock offset taken from
+`server_time`.
 
 ```python
 from cryptochief import APIError, ErrorCode

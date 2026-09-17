@@ -23,10 +23,12 @@ class APIError(CryptoChiefError):
     envelope shape the refusal arrived in: the gateway's own refusals carry the
     code in ``error`` and an English sentence in ``msg``
     (``{"error": "LABEL_TOO_LONG", "msg": "label is longer than 255 characters"}``),
-    while a relayed upstream refusal carries the generic ``SERVICE_ERROR``
-    marker in ``error`` and the code in ``msg``
-    (``{"error": "SERVICE_ERROR", "msg": "wallet_not_found"}``). Both resolve to
-    :attr:`code`::
+    a relayed upstream refusal carries the generic ``SERVICE_ERROR`` marker in
+    ``error`` and the code in ``msg``
+    (``{"error": "SERVICE_ERROR", "msg": "wallet_not_found"}``), and a
+    white-label installation carries it in ``error.details.code``, else ``error.name``
+    (``{"error": {"message": "...", "details": {"code": "INVALID_SIGNATURE"}}}``).
+    All resolve to :attr:`code`::
 
         try:
             await client.payouts.execute(req)
@@ -36,12 +38,15 @@ class APIError(CryptoChiefError):
 
     :attr:`message` is the human-readable half - the sentence when the gateway
     sent one - and :attr:`raw` is the untouched response body.
+    :attr:`server_time` is the server's Unix time in seconds when the response
+    carries one (``SIGNATURE_TIMESTAMP_OUT_OF_RANGE``), else ``None``.
     """
 
     code: str
     message: str
     http_status: int
     raw: Optional[str]
+    server_time: Optional[int]
 
     def __init__(
         self,
@@ -50,6 +55,7 @@ class APIError(CryptoChiefError):
         http_status: int = 0,
         message: Optional[str] = None,
         raw: Optional[str] = None,
+        server_time: Optional[int] = None,
     ) -> None:
         # Normalize an ErrorCode member to its wire string ("NETWORK_ERROR"),
         # not its enum repr ("ErrorCode.NETWORK_ERROR").
@@ -57,6 +63,7 @@ class APIError(CryptoChiefError):
         self.message = message or ""
         self.http_status = http_status
         self.raw = raw
+        self.server_time = server_time
         super().__init__(self._format(http_status, self.code, message))
 
     @staticmethod
@@ -105,6 +112,17 @@ class ErrorCode(str, Enum):
     #: reports, so this member is rarely what you compare against.
     SERVICE_ERROR = "SERVICE_ERROR"
     UNAUTHORIZED = "UNAUTHORIZED"
+    #: A signature header is missing, repeated or malformed (HTTP 400).
+    BAD_AUTH_HEADERS = "BAD_AUTH_HEADERS"
+    #: The signature does not match (HTTP 401).
+    INVALID_SIGNATURE = "INVALID_SIGNATURE"
+    #: ``X-CC-Timestamp`` is more than 300 s from server time (HTTP 401). The
+    #: client corrects its clock offset from ``server_time`` and retries once.
+    SIGNATURE_TIMESTAMP_OUT_OF_RANGE = "SIGNATURE_TIMESTAMP_OUT_OF_RANGE"
+    #: ``X-CC-Nonce`` was already used (HTTP 401).
+    SIGNATURE_REPLAYED = "SIGNATURE_REPLAYED"
+    #: The request body exceeds the gateway limit (HTTP 413).
+    PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
     URL_CALLBACK_REQUIRED = "URL_CALLBACK_REQUIRED"
     BATCH_EMPTY = "BATCH_EMPTY"
     BATCH_TOO_LARGE = "BATCH_TOO_LARGE"

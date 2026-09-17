@@ -3,31 +3,50 @@
 from __future__ import annotations
 
 import json
+import math
 import random
+from typing import Any, Optional
 
 from .errors import APIError, ErrorCode
 
 
 def _field(env: dict, key: str) -> str:
-    """Read ``key`` from an error envelope as a trimmed string (``""`` if absent)."""
+    """Read ``key`` from an error envelope as a string (``""`` if absent)."""
     value = env.get(key)
-    return value.strip() if isinstance(value, str) else ""
+    return value if isinstance(value, str) else ""
+
+
+def _unix_seconds(value: Any) -> Optional[int]:
+    """A JSON number as whole Unix seconds, or ``None``."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return int(value)
+    return None
 
 
 def parse_api_error(status: int, body: str) -> APIError:
     """Parse a non-2xx response body into an :class:`APIError` with a stable code.
 
-    Refusals arrive in two envelope shapes. When the gateway itself refuses, the
-    machine code is in ``error`` and ``msg`` holds an English sentence
-    (``{"error": "LABEL_TOO_LONG", "msg": "label is longer than 255 characters"}``).
-    When it relays an upstream refusal, ``error`` is the generic
-    ``SERVICE_ERROR`` marker and the machine code is in ``msg``
-    (``{"error": "SERVICE_ERROR", "msg": "wallet_not_found"}``).
+    Gateway envelope (``error`` is a string):
 
-    So the code is ``error`` unless that is ``SERVICE_ERROR``, in which case it
-    is ``msg``; an empty result falls back to ``error`` and then
-    ``HTTP_<status>``. The human-readable message prefers ``msg`` and falls back
-    to ``error``.
+    - own refusal: code in ``error``, sentence in ``msg``
+      (``{"ok": false, "error": "LABEL_TOO_LONG", "msg": "label is longer ..."}``);
+    - relayed upstream refusal: ``error`` is ``SERVICE_ERROR``, code in ``msg``
+      (``{"ok": false, "error": "SERVICE_ERROR", "msg": "wallet_not_found"}``).
+
+    The code is ``error`` unless that is ``SERVICE_ERROR``, in which case it is
+    ``msg``; the message prefers ``msg`` and falls back to ``error``.
+
+    White-label installation envelope (``error`` is an object): code in
+    ``error.details.code``, else ``error.name``; message in ``error.message``
+    (``{"data": null, "error": {"status": 401, "name": "UnauthorizedError",
+    "message": "...", "details": {"code": "INVALID_SIGNATURE"}}}``).
+
+    ``server_time`` is read from the top level, then from ``error.details``.
+    An empty code falls back to ``HTTP_<status>``.
     """
     env: dict = {}
     try:
@@ -37,14 +56,27 @@ def parse_api_error(status: int, body: str) -> APIError:
     except ValueError:
         pass  # non-JSON error body -> fall back to HTTP_<status>
 
-    error = _field(env, "error")
-    msg = _field(env, "msg")
-    code = error if error and error != ErrorCode.SERVICE_ERROR else (msg or error)
+    st = _unix_seconds(env.get("server_time"))
+    raw_error = env.get("error")
+    if isinstance(raw_error, dict):
+        details = raw_error.get("details")
+        details = details if isinstance(details, dict) else {}
+        code = _field(details, "code") or _field(raw_error, "name")
+        message = _field(raw_error, "message")
+        if st is None:
+            st = _unix_seconds(details.get("server_time"))
+    else:
+        error = _field(env, "error")
+        msg = _field(env, "msg")
+        code = error if error and error != ErrorCode.SERVICE_ERROR else (msg or error)
+        message = msg or error
+
     return APIError(
         code or f"HTTP_{status}",
         http_status=status,
-        message=msg or error,
+        message=message,
         raw=body,
+        server_time=st,
     )
 
 

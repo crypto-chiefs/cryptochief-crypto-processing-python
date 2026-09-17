@@ -1,4 +1,4 @@
-"""webhook_server - verify webhook signatures and dispatch typed events.
+"""webhook_server - verify webhooks (HMAC-SHA256 v1) and dispatch typed events.
 
 The verification helpers do no I/O, so a plain (sync) stdlib server is enough -
 use them the same way inside FastAPI / aiohttp / Django.
@@ -9,11 +9,11 @@ FastAPI equivalent:
 
     @app.post("/webhook")
     async def hook(request: Request):
-        raw = await request.body()  # the EXACT bytes
+        raw = await request.body()  # the exact bytes, before JSON parsing
         try:
-            event = parse_webhook_event(API_KEY, raw, request.headers.get("Signature"))
-        except WebhookSignatureError:
-            raise HTTPException(401, "bad signature")
+            event = parse_webhook_event(API_KEY, raw, request.headers)
+        except WebhookVerificationError:
+            raise HTTPException(401, "invalid webhook signature")
         ...  # handle event
         return {"ok": True}
 """
@@ -22,14 +22,15 @@ import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from cryptochief import (
-    WEBHOOK_HEADER,
+    WEBHOOK_DELIVERY_HEADER,
     WEBHOOK_SENDER_IPS,
+    CryptoChiefError,
     PayInWebhookEvent,
     PayoutWebhookEvent,
     StaticDepositWebhookEvent,
     SweepWebhookEvent,
     TransactionWebhookEvent,
-    WebhookSignatureError,
+    WebhookVerificationError,
     parse_webhook_event,
 )
 
@@ -75,12 +76,20 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length)
         try:
-            event = parse_webhook_event(API_KEY, raw, self.headers.get(WEBHOOK_HEADER))
-        except WebhookSignatureError:
+            event = parse_webhook_event(API_KEY, raw, self.headers)
+        except WebhookVerificationError as err:  # headers, timestamp or signature
             self.send_response(401)
             self.end_headers()
-            self.wfile.write(b"invalid signature")
+            self.wfile.write(f"invalid webhook: {err.reason}".encode())
             return
+        except CryptoChiefError:  # verified, but not a JSON object
+            self.send_response(400)
+            self.end_headers()
+            return
+
+        # The same on every attempt and resend of one delivery.
+        delivery_id = self.headers.get(WEBHOOK_DELIVERY_HEADER)
+        print("delivery", delivery_id)
 
         if isinstance(event, PayoutWebhookEvent):
             print(  # paid | system_fail

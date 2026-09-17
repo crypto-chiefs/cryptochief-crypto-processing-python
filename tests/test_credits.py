@@ -1,14 +1,17 @@
 """Credits service (balance + top-up) through a mocked transport.
 
-Validates the wire shapes (signed empty body against ``/v1/credits/balance``,
+Validates the wire shapes (signed empty object against ``/v1/credits/balance``,
 signed body with unset optional urls omitted against ``/v1/credits/topup``)
 and the full response field mappings, including a negative ``usd_balance`` and
 the optional ``order_uuid`` / ``expired_at`` both present and absent.
 """
 
+import json
+
 import httpx
 
-from cryptochief import CryptoChiefClient, canonical_json, sign
+from cryptochief import CryptoChiefClient
+from signed_request import assert_signed
 
 
 async def test_balance_posts_signed_empty_body_and_maps_fields():
@@ -38,9 +41,8 @@ async def test_balance_posts_signed_empty_body_and_maps_fields():
     assert str(req.url) == "https://api-processing.crypto-chief.com/v1/credits/balance"
     assert req.method == "POST"
     assert req.headers["Merchant"] == "M1"
-    expected = canonical_json({})
-    assert req.content.decode("utf-8") == expected == "{}"
-    assert req.headers["Signature"] == sign(expected, "secret")
+    assert req.content == b"{}"
+    assert_signed(req)
 
     assert res.credits_balance == -15_200_000
     assert res.usd_balance == "-1.52"
@@ -84,16 +86,13 @@ async def test_topup_posts_signed_body_with_urls_and_maps_full_response():
     assert str(req.url) == "https://api-processing.crypto-chief.com/v1/credits/topup"
     assert req.method == "POST"
     assert req.headers["Merchant"] == "M1"
-    expected = canonical_json(
-        {
-            "amount": "150.00",
-            "currency": "USDT",
-            "url_success": "https://example.com/ok",
-            "url_error": "https://example.com/fail",
-        }
-    )
-    assert req.content.decode("utf-8") == expected
-    assert req.headers["Signature"] == sign(expected, "secret")
+    assert json.loads(req.content) == {
+        "amount": "150.00",
+        "currency": "USDT",
+        "url_success": "https://example.com/ok",
+        "url_error": "https://example.com/fail",
+    }
+    assert_signed(req)
 
     assert res.invoice_id == 90210
     assert res.payment_link == "https://pay.crypto-chief.com/topup/abc123"
@@ -128,11 +127,10 @@ async def test_topup_omits_unset_urls_and_defaults_optional_response_fields():
 
     req = captured["request"]
     body = req.content.decode("utf-8")
-    expected = canonical_json({"amount": "25", "currency": "USDC"})
-    assert body == expected == '{"amount":"25","currency":"USDC"}'
+    assert body == '{"amount":"25","currency":"USDC"}'
     assert "url_success" not in body
     assert "url_error" not in body
-    assert req.headers["Signature"] == sign(expected, "secret")
+    assert_signed(req)
 
     assert res.invoice_id == 7
     assert res.payment_link == "https://pay.crypto-chief.com/topup/xyz789"

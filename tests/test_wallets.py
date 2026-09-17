@@ -26,9 +26,8 @@ from cryptochief import (
     PayIn,
     PayInHistoryResponse,
     WalletType,
-    canonical_json,
-    sign,
 )
+from signed_request import assert_signed
 
 PAYIN_HISTORY_RESPONSE = {
     "items": [
@@ -86,17 +85,14 @@ async def test_generate_sends_the_label_and_omits_it_when_unset():
 
     req = captured["request"]
     assert str(req.url).endswith("/v1/wallets/generate")
-    expected = canonical_json(
-        {
-            "wallet_type": "static",
-            "chain_family": "EVM",
-            "master_wallet_address": "0xmaster",
-            "callback_url": "https://your-shop.example/webhooks/deposits",
-            "label": "EU shop - order 4471",
-        }
-    )
-    assert req.content.decode("utf-8") == expected
-    assert req.headers["Signature"] == sign(expected, "secret")
+    assert json.loads(req.content) == {
+        "wallet_type": "static",
+        "chain_family": "EVM",
+        "master_wallet_address": "0xmaster",
+        "callback_url": "https://your-shop.example/webhooks/deposits",
+        "label": "EU shop - order 4471",
+    }
+    assert_signed(req)
 
     captured2: dict = {}
     client2 = _client(captured2, {"address": "0xdef", "chain_family": "EVM"})
@@ -106,7 +102,7 @@ async def test_generate_sends_the_label_and_omits_it_when_unset():
     # The endpoint refuses unknown fields and reads an empty string as a name,
     # so an unset label has to stay off the wire entirely.
     body2 = captured2["request"].content.decode("utf-8")
-    assert body2 == canonical_json({"wallet_type": "master", "chain_family": "EVM"})
+    assert json.loads(body2) == {"wallet_type": "master", "chain_family": "EVM"}
     assert "label" not in body2
 
     await client.aclose()
@@ -144,9 +140,8 @@ async def test_rebind_master_posts_the_documented_body_and_returns_the_wallet():
     assert req.headers["Merchant"] == "M1"
     # master_wallet_address, not master_address: the spelling the rest of the
     # surface uses, and the one this endpoint answers with.
-    expected = canonical_json({"address": "0x4Afb", "master_wallet_address": "0xcCb1"})
-    assert req.content.decode("utf-8") == expected
-    assert req.headers["Signature"] == sign(expected, "secret")
+    assert json.loads(req.content) == {"address": "0x4Afb", "master_wallet_address": "0xcCb1"}
+    assert_signed(req)
 
     assert out.type == "static"
     assert out.address == STATIC_WALLET["address"]
@@ -169,11 +164,11 @@ async def test_set_callback_url_posts_the_documented_body():
 
     req = captured["request"]
     assert str(req.url) == "https://api-processing.crypto-chief.com/v1/wallets/callback-url"
-    expected = canonical_json(
-        {"address": "0x4Afb", "callback_url": "https://your-shop.example/webhooks/deposits"}
-    )
-    assert req.content.decode("utf-8") == expected
-    assert req.headers["Signature"] == sign(expected, "secret")
+    assert json.loads(req.content) == {
+        "address": "0x4Afb",
+        "callback_url": "https://your-shop.example/webhooks/deposits",
+    }
+    assert_signed(req)
     assert out.callback_url == "https://your-shop.example/webhooks/deposits"
     await client.aclose()
 
@@ -190,7 +185,7 @@ async def test_an_empty_callback_url_is_sent_rather_than_omitted():
     # the callback in place and answer INVALID_PARAMS.
     assert body == '{"address":"0x4Afb","callback_url":""}'
     assert _body(captured)["callback_url"] == ""
-    assert captured["request"].headers["Signature"] == sign(body, "secret")
+    assert_signed(captured["request"])
     # Cleared reads back as null, never as an empty string.
     assert out.callback_url is None
     await client.aclose()
@@ -247,10 +242,9 @@ async def test_set_label_posts_the_documented_body():
     assert str(req.url) == "https://api-processing.crypto-chief.com/v1/wallets/label"
     assert req.method == "POST"
     assert req.headers["Merchant"] == "M1"
-    expected = canonical_json({"address": "0x4Afb", "label": "EU shop - order 4471"})
-    assert req.content.decode("utf-8") == expected
+    assert json.loads(req.content) == {"address": "0x4Afb", "label": "EU shop - order 4471"}
     assert _body(captured).keys() == {"address", "label"}
-    assert req.headers["Signature"] == sign(expected, "secret")
+    assert_signed(req)
     assert out.label == "EU shop - order 4471"
     await client.aclose()
 
@@ -267,7 +261,7 @@ async def test_an_empty_label_is_sent_rather_than_omitted():
     # in place and answer INVALID_PARAMS.
     assert body == '{"address":"0x4Afb","label":""}'
     assert _body(captured)["label"] == ""
-    assert captured["request"].headers["Signature"] == sign(body, "secret")
+    assert_signed(captured["request"])
     # Cleared reads back as null, never as an empty string.
     assert out.label is None
     await client.aclose()

@@ -14,7 +14,11 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import json
+import math
 from typing import Any, Mapping, Optional, Type, TypeVar, Union, get_args, get_origin, get_type_hints
+
+from .errors import CryptoChiefError
 
 T = TypeVar("T")
 
@@ -50,6 +54,45 @@ def to_payload(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [to_payload(v) for v in value]
     return value
+
+
+def wire_value(value: Any) -> Any:
+    """Copy of a JSON-ready value as the request body carries it, at every depth.
+
+    ``None`` members of dicts are dropped; ``None`` array elements and a
+    top-level ``None`` are kept. A finite ``float`` with an integral value and a
+    magnitude below 1e21 becomes an ``int`` (``2.0`` is sent as ``2``).
+    """
+    if isinstance(value, dict):
+        return {k: wire_value(v) for k, v in value.items() if v is not None}
+    if isinstance(value, (list, tuple)):
+        return [wire_value(v) for v in value]
+    if isinstance(value, float) and math.isfinite(value):
+        if value.is_integer() and abs(value) < 1e21:
+            return int(value)
+    return value
+
+
+def request_body(value: Any) -> bytes:
+    """UTF-8 JSON of a request value without ``None`` dict members.
+
+    Compact, keys in insertion order, non-ASCII written as UTF-8, integers
+    exact, integral floats as integers (see :func:`wire_value`). A ``None``
+    value gives an empty body. A value JSON cannot represent (NaN, infinity, an
+    unsupported type, a lone surrogate) raises :class:`CryptoChiefError`.
+    """
+    if value is None:
+        return b""
+    try:
+        text = json.dumps(
+            wire_value(value),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        return text.encode("utf-8")
+    except (TypeError, ValueError, RecursionError) as err:
+        raise CryptoChiefError(f"cryptochief: cannot encode request body: {err}") from None
 
 
 def _unwrap_optional(tp: Any) -> Any:

@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Mapping, Optional, Union
+import re
+import secrets
+import string
+import time
+from typing import Any, Callable, Dict, Mapping, Optional, Union
 
 import httpx
 
+from ._models import request_body
 from ._version import __version__
-from .errors import CryptoChiefError, is_retryable
+from .errors import CryptoChiefError, ErrorCode, is_retryable
+from .idempotency import checked_idempotency_key, current_idempotency_key
 from .rsa import RsaKeyNotConfiguredError, decrypt_rsa_oaep, load_rsa_private_key_pem
 from .services.blockchain import BlockchainService
 from .services.credits import CreditsService
@@ -22,7 +28,14 @@ from .services.sweeps import SweepsService
 from .services.transactions import TransactionsService
 from .services.wallets import WalletsService
 from .services.withdrawals import WithdrawalsService
-from .sign import sign_value
+from .sign import (
+    HEADER_HMAC_SIGNATURE,
+    HEADER_IDEMPOTENCY_KEY,
+    HEADER_NONCE,
+    HEADER_TIMESTAMP,
+    HMAC_V1_SIGNATURE_PREFIX,
+    hmac_v1_sign,
+)
 from .ton.rpc import TonRpc
 from .transport import backoff_delay, network_error, parse_api_error
 
@@ -33,6 +46,17 @@ VERSION = __version__
 DEFAULT_BASE_URL = "https://api-processing.crypto-chief.com"
 
 _MAX_RAW_IN_ERROR = 512
+
+# An HTTP method is a token (RFC 9110). Restricted to one here so that upper-casing
+# it in ASCII, as the string to sign does, is the method that goes on the wire.
+_METHOD_RE = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+_ASCII_UPPER = str.maketrans(string.ascii_lowercase, string.ascii_uppercase)
+
+
+def _checked_method(method: str) -> str:
+    if _METHOD_RE.fullmatch(method) is None:
+        raise CryptoChiefError("cryptochief: method must be an HTTP token (RFC 9110)")
+    return method.translate(_ASCII_UPPER)
 
 
 class CryptoChiefClient:
@@ -66,7 +90,7 @@ class CryptoChiefClient:
     ) -> None:
         if not merchant_id:
             raise CryptoChiefError("cryptochief: merchant_id is required")
-        if not api_key:
+        if not api_key or not api_key.strip(" \t"):
             raise CryptoChiefError("cryptochief: api_key is required")
 
         self.merchant_id = merchant_id
@@ -78,6 +102,8 @@ class CryptoChiefClient:
         self._base_ms = backoff.get("base_ms", 200)
         self._max_ms = backoff.get("max_ms", 5000)
         self._user_agent = user_agent or f"cryptochief-python/{VERSION}"
+        self._clock: Callable[[], float] = time.time
+        self._clock_offset = 0  # seconds added to the local clock
 
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient(timeout=timeout, transport=transport)
@@ -101,35 +127,67 @@ class CryptoChiefClient:
         self.credits = CreditsService(self)
         self.webhooks = WebhooksService(self)
 
-    async def request(self, path: str, body: Any = None) -> Any:
-        """Low-level signed POST against an API path (e.g. ``/v1/payout/estimate``).
+    async def request(
+        self,
+        path: str,
+        body: Any = None,
+        *,
+        method: str = "POST",
+        idempotency_key: Optional[str] = None,
+    ) -> Any:
+        """Low-level signed request to an API path (e.g. ``/v1/payout/estimate``).
 
-        Canonicalizes + signs the body, sends it, retries transient failures, and
-        returns the parsed JSON. Service methods are thin wrappers over this;
-        reach for it directly only to hit an endpoint the SDK doesn't model yet.
+        Serializes the body to JSON, signs the sent bytes with HMAC v1, retries
+        transient failures, and returns the parsed JSON. Service methods are thin
+        wrappers over this; reach for it directly only to hit an endpoint the SDK
+        doesn't model yet, including one that takes another ``method`` - a signed
+        ``GET`` with a query string, say. Dict members whose value is ``None`` are
+        not sent, at any depth; a ``None`` body is an empty body. Integers are
+        sent exactly; a float with an integral value is sent as an integer. The
+        path is signed percent-decoded, as the server reads it, and the query
+        raw, as sent. ``method`` must be an HTTP token and is upper-cased.
+        ``idempotency_key`` is sent as ``Idempotency-Key`` and covered by the
+        signature - :func:`~cryptochief.idempotency_key` sets it for service
+        calls; it must be printable ASCII without leading or trailing spaces or
+        tabs, and an empty one sends no header.
         """
-        canonical, signature = sign_value(body, self._api_key)
-        url = self.base_url + path
-        headers = {
-            "Content-Type": "application/json",
+        verb = _checked_method(method)
+        body_bytes = request_body(body)
+        url = httpx.URL(self.base_url + path)
+        # The route the server reads: percent-decoded, without the base URL.
+        route = httpx.URL(path).path
+        query = url.query.decode("ascii")
+        key = current_idempotency_key() if idempotency_key is None else idempotency_key
+        base_headers = {
             "Accept": "application/json",
             "Merchant": self.merchant_id,
-            "Signature": signature,
             "User-Agent": self._user_agent,
         }
-        body_bytes = canonical.encode("utf-8")
+        if body_bytes:
+            base_headers["Content-Type"] = "application/json"
+        if key:
+            base_headers[HEADER_IDEMPOTENCY_KEY] = checked_idempotency_key(key)
         attempts = self._retries + 1
+        attempt = 0
+        sleep_first = False
+        clock_corrected = False
         last_err: Optional[Exception] = None
 
-        for attempt in range(attempts):
-            if attempt > 0:
+        while attempt < attempts:
+            if sleep_first:
                 await asyncio.sleep(backoff_delay(attempt, self._base_ms, self._max_ms))
+            headers = {
+                **base_headers,
+                **self._hmac_v1_headers(verb, route, query, key or "", body_bytes),
+            }
             try:
-                resp = await self._http.post(url, content=body_bytes, headers=headers)
+                resp = await self._http.request(verb, url, content=body_bytes, headers=headers)
             except httpx.HTTPError as err:
                 last_err = network_error(str(err))
                 if not is_retryable(last_err):
                     raise last_err
+                attempt += 1
+                sleep_first = True
                 continue
 
             text = resp.text
@@ -148,10 +206,43 @@ class CryptoChiefClient:
             api_err = parse_api_error(status, text)
             if status >= 500:
                 last_err = api_err
+                attempt += 1
+                sleep_first = True
+                continue
+            if (
+                api_err.code == ErrorCode.SIGNATURE_TIMESTAMP_OUT_OF_RANGE
+                and api_err.server_time is not None
+                and not clock_corrected
+            ):
+                self._clock_offset = api_err.server_time - int(self._clock())
+                clock_corrected = True
+                sleep_first = False
                 continue
             raise api_err
 
         raise last_err or CryptoChiefError("cryptochief: retry budget exhausted")
+
+    def _hmac_v1_headers(
+        self, method: str, route: str, query: str, idempotency_key: str, body: bytes
+    ) -> Dict[str, str]:
+        timestamp = str(int(self._clock()) + self._clock_offset)
+        nonce = secrets.token_hex(16)
+        mac = hmac_v1_sign(
+            self._api_key,
+            timestamp=timestamp,
+            nonce=nonce,
+            method=method,
+            path=route,
+            merchant=self.merchant_id,
+            query=query,
+            idempotency_key=idempotency_key,
+            body=body,
+        )
+        return {
+            HEADER_TIMESTAMP: timestamp,
+            HEADER_NONCE: nonce,
+            HEADER_HMAC_SIGNATURE: HMAC_V1_SIGNATURE_PREFIX + mac,
+        }
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client (only if this client created it)."""

@@ -60,6 +60,7 @@ from .contract import (
     tron_to_hex,
 )
 from .errors import APIError, CryptoChiefError, ErrorCode, is_api_error, is_retryable
+from .idempotency import idempotency_key
 from .pagination import HistoryMeta, HistoryQuery
 from .poll import PollTimeoutError, wait_for_terminal
 from .rsa import (
@@ -178,7 +179,12 @@ from .services.withdrawals import (
     WithdrawalsService,
     WithdrawalStatus,
 )
-from .sign import canonical_json, sign, sign_value
+from .sign import (
+    hmac_v1_sign,
+    hmac_v1_string_to_sign,
+    sign_webhook_v1,
+    webhook_v1_string_to_sign,
+)
 from .ton import (
     TonAddress,
     crc16_xmodem,
@@ -187,19 +193,25 @@ from .ton import (
     ton_address_to_string,
 )
 from .webhook import (
+    DEFAULT_WEBHOOK_TOLERANCE,
     WEBHOOK_DELIVERY_HEADER,
-    WEBHOOK_HEADER,
     WEBHOOK_SENDER_IPS,
+    WEBHOOK_SIGNATURE_HEADER,
+    WEBHOOK_TIMESTAMP_HEADER,
     PayInWebhookEvent,
     PayoutWebhookEvent,
     StaticDepositWebhookEvent,
     SweepWebhookEvent,
     SWEEP_EVENT_CONFIRMED,
     TransactionWebhookEvent,
+    WebhookHeaders,
+    WebhookHeadersError,
     WebhookSignatureError,
+    WebhookTimestampError,
+    WebhookVerificationError,
     coerce_webhook_event,
     parse_webhook_event,
-    verify_webhook_signature,
+    verify_webhook,
 )
 
 __all__ = [
@@ -219,9 +231,11 @@ __all__ = [
     "is_api_error",
     "is_retryable",
     # Signing
-    "canonical_json",
-    "sign",
-    "sign_value",
+    "idempotency_key",
+    "hmac_v1_string_to_sign",
+    "hmac_v1_sign",
+    "webhook_v1_string_to_sign",
+    "sign_webhook_v1",
     # Amounts
     "human_to_base",
     "base_to_human",
@@ -245,11 +259,17 @@ __all__ = [
     "decrypt_rsa_oaep",
     "RsaKeyNotConfiguredError",
     # Webhooks
-    "verify_webhook_signature",
+    "verify_webhook",
     "parse_webhook_event",
     "coerce_webhook_event",
+    "WebhookHeaders",
+    "WebhookVerificationError",
+    "WebhookHeadersError",
+    "WebhookTimestampError",
     "WebhookSignatureError",
-    "WEBHOOK_HEADER",
+    "WEBHOOK_TIMESTAMP_HEADER",
+    "WEBHOOK_SIGNATURE_HEADER",
+    "DEFAULT_WEBHOOK_TOLERANCE",
     "WEBHOOK_SENDER_IPS",
     "PayoutWebhookEvent",
     "TransactionWebhookEvent",
