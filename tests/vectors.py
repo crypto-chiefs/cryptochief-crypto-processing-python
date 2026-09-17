@@ -1,9 +1,8 @@
 """The reference vector files, pinned by sha256 and read only through here.
 
-Copied unchanged: ``hmac_v1_vectors.json`` from
-processing-api-gateway/internal/auth/testdata, ``webhook_hmac_v1_vectors.json``
-from processing-webhook-service/internal/signature/testdata. A copy that differs
-from the reference fails at import.
+Copied unchanged from the API signature specification's reference vectors:
+``hmac_v1_vectors.json`` (request signing) and ``webhook_hmac_v1_vectors.json``
+(webhook signing). A copy that differs from the reference fails at import.
 """
 
 import hashlib

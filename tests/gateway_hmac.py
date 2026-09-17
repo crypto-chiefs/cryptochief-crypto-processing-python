@@ -1,4 +1,4 @@
-"""The gateway's HMAC v1 check, as processing-api-gateway/internal/auth implements it.
+"""The gateway's HMAC v1 check, re-implemented from the public signature spec.
 
 The verifying side the SDK is tested against: the vector-driven test and the mock
 gateway the client talks to over HTTP both go through :func:`check`. The string to

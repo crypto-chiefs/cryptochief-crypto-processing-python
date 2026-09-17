@@ -1,7 +1,7 @@
 """Webhook verification (HMAC-SHA256 v1) and typed event parsing.
 
-testdata/webhook_hmac_v1_vectors.json is copied unchanged from
-processing-webhook-service/internal/signature/testdata.
+testdata/webhook_hmac_v1_vectors.json holds the reference vectors from the API
+signature specification.
 """
 
 import base64

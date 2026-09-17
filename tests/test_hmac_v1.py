@@ -1,7 +1,7 @@
 """HMAC v1 request signing against the gateway's vectors (testdata/hmac_v1_vectors.json).
 
-testdata/hmac_v1_vectors.json is copied unchanged from
-processing-api-gateway/internal/auth/testdata. Every record is run through both
+testdata/hmac_v1_vectors.json holds the reference vectors from the API
+signature specification. Every record is run through both
 sides: the SDK signs it, and gateway_hmac - the gateway's check - verifies it,
 including the records the gateway refuses.
 """
