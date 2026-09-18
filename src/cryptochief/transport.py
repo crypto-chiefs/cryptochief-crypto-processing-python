@@ -38,7 +38,13 @@ def parse_api_error(status: int, body: str) -> APIError:
       (``{"ok": false, "error": "SERVICE_ERROR", "msg": "wallet_not_found"}``).
 
     The code is ``error`` unless that is ``SERVICE_ERROR``, in which case it is
-    ``msg``; the message prefers ``msg`` and falls back to ``error``.
+    ``msg``; the message prefers ``msg`` and falls back to ``error``. The
+    envelope is recognised by its markers - ``ok: false`` or a ``msg`` key.
+
+    A body without those markers is not an envelope - e.g. an order reported on
+    a non-2xx answer, where ``error`` is a sanitised human sentence and the
+    machine code travels in ``error_code``. There the code is ``error_code``,
+    never the sentence.
 
     White-label installation envelope (``error`` is an object): code in
     ``error.details.code``, else ``error.name``; message in ``error.message``
@@ -68,8 +74,12 @@ def parse_api_error(status: int, body: str) -> APIError:
     else:
         error = _field(env, "error")
         msg = _field(env, "msg")
-        code = error if error and error != ErrorCode.SERVICE_ERROR else (msg or error)
-        message = msg or error
+        if env.get("ok") is False or "msg" in env:
+            code = error if error and error != ErrorCode.SERVICE_ERROR else (msg or error)
+            message = msg or error
+        else:
+            code = _field(env, "error_code")
+            message = error
 
     return APIError(
         code or f"HTTP_{status}",

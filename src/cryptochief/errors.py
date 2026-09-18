@@ -27,8 +27,9 @@ class APIError(CryptoChiefError):
     ``error`` and the code in ``msg``
     (``{"error": "SERVICE_ERROR", "msg": "wallet_not_found"}``), and a
     white-label installation carries it in ``error.details.code``, else ``error.name``
-    (``{"error": {"message": "...", "details": {"code": "INVALID_SIGNATURE"}}}``).
-    All resolve to :attr:`code`::
+    (``{"error": {"message": "...", "details": {"code": "INVALID_SIGNATURE"}}}``),
+    and an order reported on a non-2xx answer carries it in ``error_code`` (with
+    ``error`` holding the human sentence there). All resolve to :attr:`code`::
 
         try:
             await client.payouts.execute(req)
@@ -138,6 +139,8 @@ class ErrorCode(str, Enum):
     CALLS_REQUIRED = "CALLS_REQUIRED"
     CALLS_NOT_ALLOWED_FOR_TRANSFER = "CALLS_NOT_ALLOWED_FOR_TRANSFER"
     CONTRACT_CALLS_UNSUPPORTED_ON_NETWORK = "CONTRACT_CALLS_UNSUPPORTED_ON_NETWORK"
+    #: Fee estimation does not support ``type="contract"`` (HTTP 400).
+    CONTRACT_ESTIMATE_UNSUPPORTED = "CONTRACT_ESTIMATE_UNSUPPORTED"
     NETWORK_ERROR = "NETWORK_ERROR"
 
 

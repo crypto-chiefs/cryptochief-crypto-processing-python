@@ -20,6 +20,8 @@ from .rsa import RsaKeyNotConfiguredError, decrypt_rsa_oaep, load_rsa_private_ke
 from .services.blockchain import BlockchainService
 from .services.credits import CreditsService
 from .services.currencies import CurrenciesService
+from .services.energy import EnergyService
+from .services.native import NativeService
 from .services.payins import PayInsService
 from .services.payouts import PayoutsService
 from .services.static_deposits import StaticDepositsService
@@ -125,6 +127,8 @@ class CryptoChiefClient:
         self.blockchain = BlockchainService(self)
         self.currencies = CurrenciesService(self)
         self.credits = CreditsService(self)
+        self.energy = EnergyService(self)
+        self.native = NativeService(self)
         self.webhooks = WebhooksService(self)
 
     async def request(

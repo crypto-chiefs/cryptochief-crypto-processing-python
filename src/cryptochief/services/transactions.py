@@ -121,6 +121,56 @@ class SignTransactionResponse:
 
 
 @dataclass(kw_only=True)
+class EstimateTransactionRequest:
+    """Same transfer fields as :class:`SignTransactionRequest`, minus
+    ``url_callback`` and ``calls`` - estimation supports ``native`` and
+    ``token`` transfers only; ``contract`` is refused by the API.
+    """
+
+    network: str
+    from_address: str
+    type: str
+    to_address: Optional[str] = None  # transfer-mode (native/token)
+    value: Optional[str] = None  # transfer-mode value in BASE units (e.g. wei)
+    contract: Optional[str] = None  # token contract for `token` type
+
+
+@dataclass(kw_only=True)
+class EstimateTransactionResponse:
+    #: Network fee in the native coin, human-readable (e.g. "0.00042").
+    #: On TRON this is the gross fee: ``energy_fee`` + ``bandwidth_fee`` +
+    #: ``activation_fee``.
+    estimated_fee: str = ""
+    #: ``estimated_fee`` in USD; "" when no rate is available.
+    estimated_fee_fiat: Optional[str] = None
+    #: Total native coin the from-wallet must hold (fee + value for `native`,
+    #: fee only for `token`).
+    required: str = ""
+    #: ``required`` in USD; "" when no rate is available.
+    required_fiat: Optional[str] = None
+    network: Optional[str] = None
+    chain_family: Optional[str] = None
+    type: Optional[str] = None
+    from_address: Optional[str] = None
+    to_address: Optional[str] = None
+    #: Expected fee with the from-wallet's current energy pool (staked /
+    #: delegated / rented) applied. TRON only. Not a guarantee - the pool can
+    #: be spent by other transactions before this one is broadcast.
+    fee_expected: Optional[str] = None
+    #: On-chain fee cap written into the transaction. TRON only.
+    fee_limit: Optional[str] = None
+    #: Energy units the transaction needs. TRON only.
+    energy: Optional[int] = None
+    #: TRX burned for energy at burn prices. TRON only.
+    energy_fee: Optional[str] = None
+    #: TRX burned for bandwidth. TRON only.
+    bandwidth_fee: Optional[str] = None
+    #: TRX to activate the recipient address (native transfer to a fresh
+    #: address only). TRON only.
+    activation_fee: Optional[str] = None
+
+
+@dataclass(kw_only=True)
 class ExecuteTransactionRequest:
     uuid: str
     signed_tx_hex: Optional[str] = None  # optional client-vs-server byte-match check
@@ -257,6 +307,19 @@ class TonCommentRequest:
 
 
 class TransactionsService(BaseService):
+    async def estimate(self, req: EstimateTransactionRequest) -> EstimateTransactionResponse:
+        """Estimate the network fee for a transaction WITHOUT signing or broadcasting.
+
+        Supports ``native`` and ``token`` transfers; ``type="contract"`` is
+        refused by the API with ``CONTRACT_ESTIMATE_UNSUPPORTED``. TRON
+        responses additionally carry a fee breakdown (``fee_expected``,
+        ``fee_limit``, ``energy``, ``energy_fee``, ``bandwidth_fee``,
+        ``activation_fee``); on other networks those fields are absent.
+        """
+        return from_dict(
+            EstimateTransactionResponse, await self._post("/v1/transaction/estimate", req)
+        )
+
     async def sign(self, req: SignTransactionRequest) -> SignTransactionResponse:
         """Build and sign a transaction WITHOUT broadcasting.
 

@@ -76,7 +76,7 @@ Both credentials come from the Dashboard -> Project.
 |---|---|---|
 | Single payout (incl. auto-convert swap) | `client.payouts` | `estimate`, `execute`, `info`, `history`, `wait_for` |
 | Mass payout (up to 50 items) | `client.payouts` | `batch_estimate`, `batch_execute` |
-| Two-phase sign / broadcast for arbitrary txs | `client.transactions` | `sign`, `execute`, `info`, `history`, `wait_for` |
+| Two-phase sign / broadcast for arbitrary txs | `client.transactions` | `estimate`, `sign`, `execute`, `info`, `history`, `wait_for` |
 | EVM / TRON contract calls (incl. ERC-20 / TRC-20) | `client.transactions` | `sign_evm_call`, `sign_tron_call`, `erc20_transfer` |
 | Solana programs | `client.transactions` | `sign_anchor_call`, `sign_solana_call` |
 | TON contract calls (Jetton / NFT / text) | `client.transactions` | `jetton_transfer`, `nft_transfer`, `send_ton_comment`, `sign_ton_call` |
@@ -88,6 +88,8 @@ Both credentials come from the Dashboard -> Project.
 | On-chain queries | `client.blockchain` | `supported_chains`, `contracts_available`, `contracts_list`, `wallet_balance`, `transaction_status` |
 | Fiat <-> crypto rate quote + what can be priced | `client.currencies` | `fiat_to_crypto`, `crypto_to_fiat`, `fiats`, `cryptos` |
 | Credits (billing) balance check and top-up - free of charge | `client.credits` | `balance`, `topup` |
+| TRON energy rental (quote -> rent -> order) | `client.energy` | `quote`, `rent`, `order` |
+| Native-coin purchase for credits (quote -> buy -> order) | `client.native` | `quote`, `buy`, `order` |
 
 ## Accept a crypto payment (pay-in)
 
@@ -146,6 +148,113 @@ async def pay():
                 ...  # top up and retry
             raise
 ```
+
+## Estimate the network fee before signing
+
+`transactions.estimate` prices a transfer's network fee **without signing or
+broadcasting** anything - the read-only way to show a customer the fee, or to
+check the from-wallet holds enough native coin, before `sign` / `execute`.
+It takes the same transfer fields as `sign` (minus `url_callback`) and works
+for `native` and `token` transfers; `type="contract"` is refused with
+`CONTRACT_ESTIMATE_UNSUPPORTED`.
+
+```python
+from cryptochief import EstimateTransactionRequest, Chain, TxType
+
+est = await client.transactions.estimate(EstimateTransactionRequest(
+    network=Chain.ETH_MAINNET,
+    from_address="0xYourWallet...",
+    type=TxType.NATIVE.value,         # or TxType.TOKEN with contract="0xToken..."
+    to_address="0xRecipient...",
+    value="10000000000000000",        # 0.01 ETH in base units
+))
+print(est.estimated_fee, est.estimated_fee_fiat)  # "0.00042" "1.35" (USD)
+print(est.required)   # native coin the from-wallet must hold: fee + value for
+                      # a native transfer, fee only for a token transfer
+```
+
+The fiat fields come back as `""` when no USD rate is available.
+
+On TRON the response additionally carries a fee breakdown: `fee_expected`
+(the fee with the wallet's current energy pool applied - not a guarantee, the
+pool can be spent first), `fee_limit` (the on-chain cap written into the
+transaction), `energy`, `energy_fee`, `bandwidth_fee` and `activation_fee`
+(native transfer to a fresh address). The three `*_fee` parts sum to
+`estimated_fee`; on every other network the breakdown fields are absent.
+
+## Rent TRON energy
+
+Delegating rented energy to the sender of a TRON transfer replaces most of the
+TRX the network would otherwise burn, and the rental is billed in credits - the
+same balance `client.credits.balance()` reports. Quote first (free), then rent
+with the quote's `ref` to lock the price:
+
+```python
+from cryptochief import EnergyQuoteRequest, EnergyRentRequest, EnergyOrderStatus
+
+quote = await client.energy.quote(EnergyQuoteRequest(
+    receive_address="TSender...",  # the address the planned transfer is sent FROM
+    energy=65_000,                 # optional; duration_sec optional too
+))
+print(quote.price_trx, quote.burn_price_trx)  # rent price vs. burn price, in TRX
+
+order = await client.energy.rent(
+    EnergyRentRequest(quote_ref=quote.ref),   # the quote carries the address
+    idempotency_key="energy-order-0001",   # required - safe to retry with the same key
+)
+if order.status == EnergyOrderStatus.DELIVERED:
+    ...  # energy is delegated - sign and execute the transfer now
+elif order.status == EnergyOrderStatus.REFUSED:
+    print(order.error_code, order.error)  # nothing was charged: price_usd / credits are None
+```
+
+`rent` is synchronous: the answer is always the order. A `refused` order
+(HTTP 502, or 402 when the credits balance ran out) comes back with
+`error_code` / `error` saying why and nothing charged - retrying with a NEW
+idempotency key is safe. An `unresolved` one (HTTP 409, `needs_attention=True`)
+means delivery is unknown - **do not retry**, reconcile with
+`client.energy.order(key)` (the idempotency key) until the order is
+`delivered` or `refused`. Only failures with no order to report (a spent
+`quote_ref`, gateway errors) raise `APIError`.
+
+## Buy native coin for credits
+
+The platform sells the native coin of a network (TRX, ETH, BNB, SOL, TON, ...)
+out of its own liquidity and sends it to any address - the merchant pays in
+credits, the recipient pays nothing. The price includes the coins at the
+current market rate and the fee of the platform's own transfer - `total_usd`
+is the full price, `credits` the exact amount charged. Quote first (free),
+then buy with the quote's `ref` to lock the price:
+
+```python
+from cryptochief import NativeQuoteRequest, NativeBuyRequest, NativeOrderStatus
+
+quote = await client.native.quote(NativeQuoteRequest(
+    network="TRON_MAINNET",
+    receive_address="TRecipient...",  # any address - the merchant pays
+    amount="25",                      # human units of the native coin
+))
+print(quote.total_usd, quote.credits)  # final price; transfer fee included
+
+order = await client.native.buy(
+    NativeBuyRequest(quote_ref=quote.ref),
+    idempotency_key="native-order-0001",  # required - safe to retry with the same key
+)
+if order.status == NativeOrderStatus.DELIVERED:
+    print(order.tx_hash)  # the coins are sent
+elif order.status == NativeOrderStatus.REFUSED:
+    print(order.error_code, order.error)  # nothing was charged: total_usd / credits are None
+```
+
+`buy` is synchronous: the answer is always the order. A `refused` order (HTTP
+502, or 402 when the credits balance did not cover it) comes back with
+`error_code` / `error` saying why and nothing charged - top up with
+`client.credits.topup` or retry with a NEW idempotency key. An `unresolved`
+one (HTTP 409, `needs_attention=True`) means the transfer's outcome never
+arrived - **do not retry**, reconcile with `client.native.order(key)` (the
+idempotency key) until the order is `delivered` or `refused`. Only failures
+with no order to report (a spent `quote_ref` - 409 `QUOTE_EXPIRED` /
+`QUOTE_ALREADY_USED`, gateway errors) raise `APIError`.
 
 ## Amounts: always integers, never floats
 

@@ -78,6 +78,24 @@ from .services.blockchain import (
     WalletBalanceRow,
 )
 from .services.credits import CreditsBalance, CreditsService, CreditsTopup
+from .services.energy import (
+    EnergyOrder,
+    EnergyOrderStatus,
+    EnergyQuote,
+    EnergyQuoteRequest,
+    EnergyRentRequest,
+    EnergyService,
+    is_energy_order_terminal,
+)
+from .services.native import (
+    NativeBuyRequest,
+    NativeOrder,
+    NativeOrderStatus,
+    NativeQuote,
+    NativeQuoteRequest,
+    NativeService,
+    is_native_order_terminal,
+)
 from .services.currencies import (
     ConvertRequest,
     ConvertResponse,
@@ -148,6 +166,8 @@ from .services.transactions import (
     AnchorCallRequest,
     ContractCall,
     Erc20TransferRequest,
+    EstimateTransactionRequest,
+    EstimateTransactionResponse,
     EvmCallRequest,
     ExecuteTransactionRequest,
     JettonTransferRequest,
@@ -296,6 +316,8 @@ __all__ = [
     "BlockchainService",
     "CurrenciesService",
     "CreditsService",
+    "EnergyService",
+    "NativeService",
     # Payout types
     "EstimatePayoutRequest",
     "ExecutePayoutRequest",
@@ -312,6 +334,8 @@ __all__ = [
     # Transaction types
     "SignTransactionRequest",
     "SignTransactionResponse",
+    "EstimateTransactionRequest",
+    "EstimateTransactionResponse",
     "ExecuteTransactionRequest",
     "TransactionInfo",
     "TransactionHistoryResponse",
@@ -379,6 +403,20 @@ __all__ = [
     # Credits types
     "CreditsBalance",
     "CreditsTopup",
+    # Energy types
+    "EnergyQuoteRequest",
+    "EnergyRentRequest",
+    "EnergyQuote",
+    "EnergyOrder",
+    "EnergyOrderStatus",
+    "is_energy_order_terminal",
+    # Native-coin purchase types
+    "NativeQuoteRequest",
+    "NativeBuyRequest",
+    "NativeQuote",
+    "NativeOrder",
+    "NativeOrderStatus",
+    "is_native_order_terminal",
     # Contract encoders
     "encode_evm_call",
     "encode_evm_call_hex",

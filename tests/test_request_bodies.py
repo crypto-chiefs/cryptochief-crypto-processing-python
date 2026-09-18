@@ -19,12 +19,15 @@ from cryptochief import (
     CreatePayInRequest,
     CryptoChiefClient,
     CryptoChiefError,
+    EnergyQuoteRequest,
     EstimatePayoutRequest,
+    EstimateTransactionRequest,
     EvmCallRequest,
     ExecutePayoutRequest,
     ExecuteTransactionRequest,
     GenerateWalletRequest,
     HistoryQuery,
+    NativeQuoteRequest,
     SelectAssetRequest,
     SignTransactionRequest,
     StaticDepositHistoryQuery,
@@ -36,6 +39,7 @@ from signed_request import assert_signed
 EVM = "0x4Afb000000000000000000000000000000000001"
 EVM2 = "0xcCb1000000000000000000000000000000000002"
 TON = "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"
+TRON = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 
 
 def execute_payout(**opt):
@@ -112,6 +116,15 @@ CASES = [
         '{"calls":[{"data":"AA==","to":"EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"}],'
         '"from_address":"EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",'
         '"network":"TON_TESTNET","type":"contract"}',
+    ),
+    (
+        "transactions.estimate none",
+        lambda c: c.transactions.estimate(EstimateTransactionRequest(
+            network="ETH_SEPOLIA", from_address=EVM, type="token", to_address=EVM2,
+            value=None, contract=None)),
+        "/v1/transaction/estimate",
+        '{"from_address":"0x4Afb000000000000000000000000000000000001","network":"ETH_SEPOLIA",'
+        '"to_address":"0xcCb1000000000000000000000000000000000002","type":"token"}',
     ),
     (
         "transactions.execute none",
@@ -279,6 +292,32 @@ CASES = [
         lambda c: c.credits.topup(amount="25", currency="USDC", url_success=None, url_error=None),
         "/v1/credits/topup",
         '{"amount":"25","currency":"USDC"}',
+    ),
+    (
+        "energy.quote none",
+        lambda c: c.energy.quote(
+            EnergyQuoteRequest(receive_address=TRON, energy=None, duration_sec=None)),
+        "/v1/energy/quote",
+        '{"receive_address":"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"}',
+    ),
+    (
+        "energy.order",
+        lambda c: c.energy.order("k-1"),
+        "/v1/energy/order",
+        '{"key":"k-1"}',
+    ),
+    (
+        "native.quote",
+        lambda c: c.native.quote(
+            NativeQuoteRequest(network="TRON_MAINNET", receive_address=TRON, amount="25")),
+        "/v1/native/quote",
+        '{"network":"TRON_MAINNET","receive_address":"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t","amount":"25"}',
+    ),
+    (
+        "native.order",
+        lambda c: c.native.order("k-1"),
+        "/v1/native/order",
+        '{"key":"k-1"}',
     ),
     (
         "request member none",

@@ -56,6 +56,36 @@ def test_bare_service_error_falls_back_to_the_marker():
     assert err.code == ErrorCode.SERVICE_ERROR
 
 
+def test_order_body_code_comes_from_error_code_not_the_sentence():
+    """An order reported on a non-2xx is no envelope: ``error`` is the human
+    sentence there, and the machine code travels in ``error_code``."""
+    body = json.dumps(
+        {
+            "id": 4472,
+            "idempotency_key": "energy-2026-09-18-0002",
+            "status": "refused",
+            "settled": True,
+            "needs_attention": False,
+            "error_code": "SUPPLIER_REFUSED",
+            "error": "no supplier could take this order; nothing was bought",
+            "created_at": "2026-09-18T12:10:00Z",
+        }
+    )
+    err = parse_api_error(502, body)
+
+    assert err.code == "SUPPLIER_REFUSED"
+    assert err.message == "no supplier could take this order; nothing was bought"
+    assert err.raw == body
+
+
+def test_order_body_without_error_code_falls_back_to_http_status():
+    body = json.dumps({"id": 4473, "status": "unresolved", "error": "supplier never answered"})
+    err = parse_api_error(409, body)
+
+    assert err.code == "HTTP_409"
+    assert err.message == "supplier never answered"
+
+
 def test_envelope_fields_are_not_trimmed():
     err = parse_api_error(400, json.dumps({"ok": False, "error": " LABEL_TOO_LONG ", "msg": " m "}))
     assert err.code == " LABEL_TOO_LONG "
