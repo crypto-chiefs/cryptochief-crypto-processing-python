@@ -15,7 +15,7 @@ import pytest
 import gateway_hmac
 import vectors
 from cryptochief import CryptoChiefClient, CryptoChiefError, hmac_v1_sign, hmac_v1_string_to_sign
-from cryptochief.sign import hmac_v1_body_sha256
+from cryptochief.sign import HMAC_V1_SIGNATURE_PREFIX, hmac_v1_body_sha256
 
 VECTORS_FILE = vectors.REQUEST_VECTORS_FILE
 VECTORS = vectors.REQUEST_VECTORS
@@ -97,7 +97,7 @@ def sdk_signed(
         ("Merchant", merchant),
         ("X-CC-Timestamp", timestamp),
         ("X-CC-Nonce", nonce),
-        ("X-CC-Signature", gateway_hmac.SIGNATURE_PREFIX + signature),
+        ("X-CC-Signature", signature),
     ]
     if idempotency_key:
         headers.append(("Idempotency-Key", idempotency_key))
@@ -134,7 +134,7 @@ def test_vector_string_to_sign_and_signature(v):
     fields = _fields(v)
     assert hmac_v1_body_sha256(fields["body"]) == v["body_sha256"]
     assert hmac_v1_string_to_sign(**fields) == v["string_to_sign"]
-    assert hmac_v1_sign(v["api_key"], **fields) == v["signature"]
+    assert hmac_v1_sign(v["api_key"], **fields) == HMAC_V1_SIGNATURE_PREFIX + v["signature"]
 
 
 @pytest.mark.parametrize("v", VECTORS, ids=IDS)
@@ -154,15 +154,34 @@ def test_refused_vector_has_one_defect(v):
     assert outcome == gateway_hmac.OK
 
 
+def test_signed_header_value_roundtrips():
+    """hmac_v1_sign returns the header value: put in as it is, the gateway accepts it."""
+    key = "test_api_key_123"
+    req = sdk_signed(api_key=key)
+    signature = dict(req.headers)["X-CC-Signature"]
+    assert signature.startswith(HMAC_V1_SIGNATURE_PREFIX)
+    assert len(signature) == len(HMAC_V1_SIGNATURE_PREFIX) + 64
+    assert signature == hmac_v1_sign(
+        key,
+        timestamp="1789430400",
+        nonce="0123456789abcdef0123456789abcdef",
+        method="POST",
+        path="/v1/wallets/info",
+        merchant="3f2a1b4c-5d6e-7f80-9a1b-2c3d4e5f6071",
+        body=b'{"address":"TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7"}',
+    )
+    assert gateway_hmac.check(req, api_key=key, now=1789430400) == gateway_hmac.OK
+
+
 def test_str_body_is_utf8():
     v = BY_NAME["json_null_html_chars_non_ascii_u2028_numbers"]
     fields = {**_fields(v), "body": v["body"]}
-    assert hmac_v1_sign(v["api_key"], **fields) == v["signature"]
+    assert hmac_v1_sign(v["api_key"], **fields) == HMAC_V1_SIGNATURE_PREFIX + v["signature"]
 
 
 def test_line_break_in_body_is_allowed():
     v = BY_NAME["body_whitespace_and_line_breaks"]
-    assert hmac_v1_sign(v["api_key"], **_fields(v)) == v["signature"]
+    assert hmac_v1_sign(v["api_key"], **_fields(v)) == HMAC_V1_SIGNATURE_PREFIX + v["signature"]
 
 
 @pytest.mark.parametrize(
@@ -184,7 +203,7 @@ def test_method_is_uppercased():
     v = BY_NAME["get_query_empty_body"]
     fields = {**_fields(v), "method": "get"}
     assert hmac_v1_string_to_sign(**fields) == v["string_to_sign"]
-    assert hmac_v1_sign(v["api_key"], **fields) == v["signature"]
+    assert hmac_v1_sign(v["api_key"], **fields) == HMAC_V1_SIGNATURE_PREFIX + v["signature"]
 
 
 @pytest.mark.parametrize(

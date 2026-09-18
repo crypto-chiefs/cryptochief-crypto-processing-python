@@ -422,6 +422,7 @@ sig = hmac_v1_sign(
     "K", timestamp=1789430400, nonce="0123456789abcdef0123456789abcdef",
     method="POST", path="/v1/payout/info", merchant="M", body=b'{"uuid":"u1"}',
 )
+# sig is the X-CC-Signature header value, "v1=" + 64 lowercase hex, set as it is
 ```
 
 The body is compact UTF-8 JSON. `None` fields of request models and `None` members

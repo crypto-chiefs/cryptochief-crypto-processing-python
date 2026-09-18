@@ -105,10 +105,9 @@ def hmac_v1_sign(
     idempotency_key: str = "",
     body: Body = b"",
 ) -> str:
-    """Lowercase hex ``HMAC-SHA256(key=api_key, msg=string_to_sign)``.
+    """The ``X-CC-Signature`` header value of a request: ``"v1=" + hex(HMAC-SHA256(api_key, string_to_sign))``.
 
-    The ``X-CC-Signature`` header value is ``"v1=" + hmac_v1_sign(...)``. An
-    ``api_key`` that is empty or only spaces and tabs raises
+    An ``api_key`` that is empty or only spaces and tabs raises
     :class:`CryptoChiefError`.
     """
     _checked_api_key(api_key)
@@ -122,9 +121,7 @@ def hmac_v1_sign(
         idempotency_key=idempotency_key,
         body=body,
     )
-    return hmac.new(
-        api_key.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha256
-    ).hexdigest()
+    return HMAC_V1_SIGNATURE_PREFIX + _mac(api_key, string_to_sign).hex()
 
 
 def webhook_v1_string_to_sign(timestamp: int, delivery_id: str, body: Body = b"") -> str:

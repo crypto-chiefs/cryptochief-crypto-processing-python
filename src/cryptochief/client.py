@@ -35,7 +35,6 @@ from .sign import (
     HEADER_IDEMPOTENCY_KEY,
     HEADER_NONCE,
     HEADER_TIMESTAMP,
-    HMAC_V1_SIGNATURE_PREFIX,
     hmac_v1_sign,
 )
 from .ton.rpc import TonRpc
@@ -231,7 +230,7 @@ class CryptoChiefClient:
     ) -> Dict[str, str]:
         timestamp = str(int(self._clock()) + self._clock_offset)
         nonce = secrets.token_hex(16)
-        mac = hmac_v1_sign(
+        signature = hmac_v1_sign(
             self._api_key,
             timestamp=timestamp,
             nonce=nonce,
@@ -245,7 +244,7 @@ class CryptoChiefClient:
         return {
             HEADER_TIMESTAMP: timestamp,
             HEADER_NONCE: nonce,
-            HEADER_HMAC_SIGNATURE: HMAC_V1_SIGNATURE_PREFIX + mac,
+            HEADER_HMAC_SIGNATURE: signature,
         }
 
     async def aclose(self) -> None:

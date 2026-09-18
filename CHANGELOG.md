@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.12.0] — 2026-09-19
+
+- **Breaking for direct callers of `hmac_v1_sign`:** it now returns the full `X-CC-Signature` header value (`v1=` + lowercase hex), matching `sign_webhook_v1`. Requests sent through the client are unchanged — the header on the wire is byte-for-byte the same
+
 ## [0.11.0] — 2026-09-19
 
 - `client.transactions.estimate(EstimateTransactionRequest)` — POST `/v1/transaction/estimate`: prices a transfer's network fee without signing or broadcasting anything; `native` and `token` transfers only, `type="contract"` is refused with `CONTRACT_ESTIMATE_UNSUPPORTED`; `EstimateTransactionResponse` carries `estimated_fee` / `estimated_fee_fiat` and `required` / `required_fiat` (the native coin the from-wallet must hold: fee + value for a native transfer, fee only for a token one; the fiat fields are `""` when no USD rate is available), and on TRON additionally a fee breakdown: `fee_expected` (the fee with the wallet's current energy pool applied — not a guarantee, the pool can be spent first), `fee_limit` (the on-chain cap written into the transaction), `energy`, `energy_fee`, `bandwidth_fee` and `activation_fee` (native transfer to a fresh address); an estimation infrastructure failure answers 502 `ESTIMATE_UNAVAILABLE`

@@ -18,7 +18,7 @@ def expected_signature(
     query: str = "",
     idempotency_key: str = "",
 ) -> str:
-    return "v1=" + hmac_v1_sign(
+    return hmac_v1_sign(
         api_key,
         timestamp=request.headers["X-CC-Timestamp"],
         nonce=request.headers["X-CC-Nonce"],
