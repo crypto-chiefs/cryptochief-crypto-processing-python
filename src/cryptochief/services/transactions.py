@@ -43,9 +43,12 @@ class TxStatus(str, Enum):
     CONFIRMED = "confirmed"
     FAILED = "failed"
     EXPIRED = "expired"
+    #: EVM: replaced by a newer signature from the same address before it was
+    #: executed; ``error_reason`` is ``SUPERSEDED_BY:<new uuid>``.
+    CANCELLED = "cancelled"
 
 
-_TX_TERMINAL = frozenset({"confirmed", "failed", "expired"})
+_TX_TERMINAL = frozenset({"confirmed", "failed", "expired", "cancelled"})
 
 
 def is_transaction_terminal(status: str) -> bool:
@@ -118,6 +121,9 @@ class SignTransactionResponse:
     expires_at: Optional[str] = None
     chain_family: Optional[str] = None
     network: Optional[str] = None
+    #: EVM: uuids of the earlier unexecuted signatures from the same address
+    #: that this one replaced; they turn ``cancelled``. Empty otherwise.
+    superseded_uuids: List[str] = field(default_factory=list)
 
 
 @dataclass(kw_only=True)
@@ -200,6 +206,12 @@ class TransactionInfo:
     actual_fee_fiat: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    #: Why the transaction is ``failed``, ``expired`` or ``cancelled``
+    #: (``SUPERSEDED_BY:<uuid>``), or why a ``signed`` one could not be executed
+    #: yet (``NONCE_GAP: missing_nonce=<n> blocking_uuid=<uuid>``,
+    #: ``NONCE_ALREADY_USED: chain_nonce=<n>``).
+    error_reason: Optional[str] = None
+    #: Not sent by the API; read ``error_reason``.
     error: Optional[str] = None
 
 

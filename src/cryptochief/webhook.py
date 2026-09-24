@@ -287,7 +287,8 @@ class PayoutWebhookEvent:
 
 @dataclass(kw_only=True)
 class TransactionWebhookEvent:
-    """Transaction webhook. Fires only on terminal status (confirmed / failed / expired)."""
+    """Transaction webhook. Fires only on terminal status (confirmed / failed /
+    expired / cancelled)."""
 
     event: str = ""
     uuid: str = ""

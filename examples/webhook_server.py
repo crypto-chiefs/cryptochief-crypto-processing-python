@@ -97,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"confirmations={event.confirmations}/{event.required_confirmations}"
             )
         elif isinstance(event, TransactionWebhookEvent):
-            print(  # confirmed | failed | expired
+            print(  # confirmed | failed | expired | cancelled
                 f"transaction {event.uuid}: {event.status} "
                 f"confirmations={event.confirmations}/{event.required_confirmations}"
             )
