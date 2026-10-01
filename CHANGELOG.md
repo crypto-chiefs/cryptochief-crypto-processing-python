@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.14.0] — 2026-10-01
+
+- Multi-payment PayIn (`is_payment_multiple`): an invoice can be paid in several transfers; underpaid orders sit in `wrong_amount_waiting`, top-ups are accepted until `expired_at` + 1 hour, a partial timeout finalizes as `paid_less`; new webhook events `invoice.wrong_amount_waiting` (on every receipt) and `invoice.late_payment`; webhook payloads and `PayIn` models carry `is_payment_multiple`, `received_amount_crypto`, `remaining_amount_crypto` and `payments[]`
+- `accuracy_payment_percent`: range extended to -1..15 (default 5); `-1` accepts any paid amount, the final status resolves by direction (`paid` / `paid_less` / `paid_over`)
+- `PayInStatus`: `paid_less` and `paid_over` are terminal statuses (fixes waitFor hanging on them)
+
 ## [0.13.0] — 2026-09-24
 
 - `TxStatus.CANCELLED` (`cancelled`): an EVM signature replaced by a newer one from the same address before it was executed. `is_transaction_terminal` and `transactions.wait_for` treat it as final
