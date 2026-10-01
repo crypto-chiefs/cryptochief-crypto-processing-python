@@ -311,8 +311,27 @@ class TransactionWebhookEvent:
 
 
 @dataclass(kw_only=True)
+class PayInPayment:
+    """One transaction paying into an ``is_payment_multiple`` pay-in order."""
+
+    txid: Optional[str] = None
+    amount_crypto: Optional[str] = None
+    confirmations: Optional[int] = None
+    status: Optional[str] = None
+    seen_at: Optional[str] = None
+
+
+@dataclass(kw_only=True)
 class PayInWebhookEvent:
-    """Pay-in webhook. Event names carry the ``invoice.`` prefix (e.g. ``invoice.paid``)."""
+    """Pay-in webhook. Event names carry the ``invoice.`` prefix (e.g. ``invoice.paid``).
+
+    An order created with ``is_payment_multiple`` also emits
+    ``invoice.wrong_amount_waiting`` on every payment while the invoiced amount
+    is not yet reached, and ``invoice.late_payment`` when a payment arrives
+    after the final status, inside the observation window. Only its payloads
+    carry the ``is_payment_multiple`` / ``received_amount_crypto`` /
+    ``remaining_amount_crypto`` / ``payments`` fields.
+    """
 
     event: str = ""
     uuid: str = ""
@@ -330,6 +349,14 @@ class PayInWebhookEvent:
     payment_network: Optional[str] = None
     to_address: Optional[str] = None
     txid: Optional[str] = None
+    #: The fields below appear only on orders created with ``is_payment_multiple``.
+    is_payment_multiple: Optional[bool] = None
+    #: Sum of every payment received so far.
+    received_amount_crypto: Optional[str] = None
+    #: What's left to reach the invoice amount; ``"0"`` once it is covered.
+    remaining_amount_crypto: Optional[str] = None
+    #: Every payment the order has seen.
+    payments: Optional[List[PayInPayment]] = None
 
 
 @dataclass(kw_only=True)

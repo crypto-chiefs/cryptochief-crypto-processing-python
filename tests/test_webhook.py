@@ -683,3 +683,86 @@ def test_payin_body_with_nulls():
     assert evt.uuid == data["uuid"]
     assert evt.txid == data.get("txid")
     assert evt.prev_status == data.get("prev_status")
+    # The multiple-payment fields are absent from an order without the flag.
+    assert evt.is_payment_multiple is None
+    assert evt.received_amount_crypto is None
+    assert evt.remaining_amount_crypto is None
+    assert evt.payments is None
+
+
+def test_payin_wrong_amount_waiting_fires_on_every_payment_with_the_running_total():
+    body = {
+        "event": "invoice.wrong_amount_waiting",
+        "uuid": "inv-1",
+        "order_id": "o-1",
+        "status": "wrong_amount_waiting",
+        "prev_status": "pending",
+        "amount_crypto": "25.000000",
+        "is_payment_multiple": True,
+        "received_amount_crypto": "10.000000",
+        "remaining_amount_crypto": "15.000000",
+        "payments": [
+            {
+                "txid": "aa11",
+                "amount_crypto": "4.000000",
+                "confirmations": 19,
+                "status": "confirmed",
+                "seen_at": "2026-10-01T10:00:00Z",
+            },
+            {
+                "txid": "bb22",
+                "amount_crypto": "6.000000",
+                "confirmations": 3,
+                "status": "pending",
+                "seen_at": "2026-10-01T10:05:00Z",
+            },
+        ],
+    }
+    evt = parse_webhook_event(KEY, *signed(body), now=TS)
+    assert isinstance(evt, PayInWebhookEvent)
+    assert evt.event == "invoice.wrong_amount_waiting"
+    assert evt.status == "wrong_amount_waiting"
+    assert evt.is_payment_multiple is True
+    assert evt.received_amount_crypto == "10.000000"
+    assert evt.remaining_amount_crypto == "15.000000"
+    assert [p.txid for p in evt.payments] == ["aa11", "bb22"]
+    first, second = evt.payments
+    assert (first.amount_crypto, first.confirmations) == ("4.000000", 19)
+    assert (first.status, first.seen_at) == ("confirmed", "2026-10-01T10:00:00Z")
+    assert second.confirmations == 3
+
+
+def test_payin_late_payment_keeps_the_final_status():
+    body = {
+        "event": "invoice.late_payment",
+        "uuid": "inv-2",
+        "order_id": "o-2",
+        "status": "paid_less",
+        "txid": "cc33",
+        "is_payment_multiple": True,
+        "received_amount_crypto": "20.000000",
+        "payments": [
+            {
+                "txid": "aa11",
+                "amount_crypto": "10.000000",
+                "confirmations": 30,
+                "status": "confirmed",
+                "seen_at": "2026-10-01T09:00:00Z",
+            },
+            {
+                "txid": "cc33",
+                "amount_crypto": "10.000000",
+                "confirmations": 1,
+                "status": "seen",
+                "seen_at": "2026-10-01T12:00:00Z",
+            },
+        ],
+    }
+    evt = parse_webhook_event(KEY, *signed(body), now=TS)
+    assert isinstance(evt, PayInWebhookEvent)
+    assert evt.event == "invoice.late_payment"
+    assert evt.status == "paid_less"
+    assert evt.is_payment_multiple is True
+    assert evt.received_amount_crypto == "20.000000"
+    assert evt.remaining_amount_crypto is None
+    assert [p.txid for p in evt.payments] == ["aa11", "cc33"]

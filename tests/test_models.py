@@ -10,16 +10,20 @@ from cryptochief import (
     EstimatePayoutRequest,
     EstimatePayoutResponse,
     ExecutePayoutRequest,
+    PayIn,
+    PayInPayment,
     PayoutHistoryResponse,
     PayoutInfo,
     PayoutStatus,
     TransactionHistoryResponse,
     TransactionInfo,
     TxStatus,
+    is_payin_terminal,
     is_payout_terminal,
     is_transaction_terminal,
 )
 from cryptochief._models import from_dict, to_payload
+from cryptochief.services.payins import PayInStatus
 from cryptochief.services.payouts import PayoutsService
 
 
@@ -306,3 +310,42 @@ def test_payout_statuses_include_the_in_flight_names_the_api_sends():
 def test_payout_wait_defaults_to_90_minutes():
     # paid waits for the network's finality depth: about 60 minutes on BCH alone.
     assert inspect.signature(PayoutsService.wait_for).parameters["timeout"].default == 5400.0
+
+
+def test_payin_wrong_amount_waiting_is_not_terminal():
+    # An underpaid is_payment_multiple order is still collecting the remainder.
+    assert not is_payin_terminal(PayInStatus.WRONG_AMOUNT_WAITING.value)
+    for name in ("PAID", "PAID_LESS", "PAID_OVER", "CANCEL", "EXPIRED"):
+        assert is_payin_terminal(PayInStatus[name].value)
+
+
+def test_payin_carries_the_multiple_payment_fields():
+    payin = from_dict(PayIn, {
+        "uuid": "inv-1",
+        "status": "wrong_amount_waiting",
+        "amount_crypto": "25.000000",
+        "is_payment_multiple": True,
+        "received_amount_crypto": "10.000000",
+        "remaining_amount_crypto": "15.000000",
+        "payments": [
+            {"txid": "aa11", "amount_crypto": "4.000000", "confirmations": 19,
+             "status": "confirmed", "seen_at": "2026-10-01T10:00:00Z"},
+            {"txid": "bb22", "amount_crypto": "6.000000", "confirmations": 3,
+             "status": "pending", "seen_at": "2026-10-01T10:05:00Z"},
+        ],
+    })
+    assert payin.is_payment_multiple is True
+    assert payin.received_amount_crypto == "10.000000"
+    assert payin.remaining_amount_crypto == "15.000000"
+    assert [p.txid for p in payin.payments] == ["aa11", "bb22"]
+    first = payin.payments[0]
+    assert isinstance(first, PayInPayment)
+    assert (first.amount_crypto, first.confirmations) == ("4.000000", 19)
+    assert (first.status, first.seen_at) == ("confirmed", "2026-10-01T10:00:00Z")
+
+    # An order without the flag parses as before: the fields stay None.
+    legacy = from_dict(PayIn, {"uuid": "inv-2", "status": "paid"})
+    assert legacy.is_payment_multiple is None
+    assert legacy.received_amount_crypto is None
+    assert legacy.remaining_amount_crypto is None
+    assert legacy.payments is None

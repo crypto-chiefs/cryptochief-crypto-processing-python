@@ -10,6 +10,7 @@ from .._models import from_dict
 from ..assets import Asset, AssetsPolicy
 from ..pagination import HistoryMeta, HistoryQuery
 from ..poll import wait_for_terminal
+from ..webhook import PayInPayment
 from .base import BaseService
 
 
@@ -25,12 +26,17 @@ class PayInStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     PROCESS = "process"
+    #: Underpaid ``is_payment_multiple`` order still collecting the remainder;
+    #: not terminal - the balance is accepted until ``expired_at`` + 1h.
+    WRONG_AMOUNT_WAITING = "wrong_amount_waiting"
     PAID = "paid"
+    PAID_LESS = "paid_less"
+    PAID_OVER = "paid_over"
     CANCEL = "cancel"
     EXPIRED = "expired"
 
 
-_PAYIN_TERMINAL = frozenset({"paid", "cancel", "expired"})
+_PAYIN_TERMINAL = frozenset({"paid", "paid_less", "paid_over", "cancel", "expired"})
 
 
 def is_payin_terminal(status: str) -> bool:
@@ -77,7 +83,14 @@ class CreatePayInRequest:
     url_success: Optional[str] = None
     url_error: Optional[str] = None
     additional_data: Optional[str] = None
+    #: Payment tolerance, percent: -1..15, default 5. ``-1`` is the wildcard -
+    #: any amount counts and the final status (``paid`` / ``paid_less`` /
+    #: ``paid_over``) says on which side of the invoice amount it landed.
     accuracy_payment_percent: Optional[int] = None
+    #: Allow the invoice to be paid by several transactions: an underpayment
+    #: moves the order to ``wrong_amount_waiting`` and the remainder is accepted
+    #: until ``expired_at`` + 1h. Default false; unset is not sent.
+    is_payment_multiple: Optional[bool] = None
     # FIAT mode.
     amount_fiat: Optional[str] = None
     currency: Optional[str] = None
@@ -117,6 +130,14 @@ class PayIn:
     url_error: Optional[str] = None
     additional_data: Optional[str] = None
     can_cancel: Optional[bool] = None
+    #: The fields below appear only on orders created with ``is_payment_multiple``.
+    is_payment_multiple: Optional[bool] = None
+    #: Sum of every payment received so far.
+    received_amount_crypto: Optional[str] = None
+    #: What's left to reach the invoice amount; ``"0"`` once it is covered.
+    remaining_amount_crypto: Optional[str] = None
+    #: Every payment the order has seen.
+    payments: Optional[List[PayInPayment]] = None
     expired_at: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None

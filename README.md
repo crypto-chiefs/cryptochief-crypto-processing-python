@@ -113,13 +113,23 @@ async def accept():
         print("send the customer to:", invoice.payment_link)
 
         final = await client.pay_ins.wait_for(invoice.uuid, timeout=1800)
-        print(final.status)  # paid | expired | cancel
+        print(final.status)  # paid | paid_less | paid_over | expired | cancel
 ```
 
 For a fixed-crypto invoice use `mode=PayInMode.CRYPTO` with `amount_crypto` and
 `asset=Asset(coin="USDT", network=Chain.TRON_MAINNET)`. For host-to-host flows
 where the customer picks the coin in your own UI, create the order without a fixed
 asset and commit the choice with `client.pay_ins.select_asset(...)`.
+
+`accuracy_payment_percent` is the payment tolerance in percent: -1..15, default
+5; `-1` accepts any amount, and the final status - `paid`, `paid_less` or
+`paid_over` - says on which side of the invoice it landed. With
+`is_payment_multiple=True` the invoice can be paid in several transactions:
+every partial payment fires `invoice.wrong_amount_waiting`, a payment arriving
+after the final status (inside the observation window) fires
+`invoice.late_payment`, and both the webhook payload and the `PayIn` carry
+`received_amount_crypto`, `remaining_amount_crypto` and `payments[]` with every
+transaction seen.
 
 ## Send a payout (with confirmation)
 

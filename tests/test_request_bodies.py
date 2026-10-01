@@ -158,10 +158,19 @@ CASES = [
             order_id="o-1", user_id="u-1", mode="fiat", to_address=None,
             master_wallet_address=None, environment=None, lifetime_sec=None, url_callback=None,
             url_success=None, url_error=None, additional_data=None,
-            accuracy_payment_percent=None, amount_fiat=None, currency=None, course_source=None,
-            assets=None, amount_crypto=None, asset=None)),
+            accuracy_payment_percent=None, is_payment_multiple=None, amount_fiat=None,
+            currency=None, course_source=None, assets=None, amount_crypto=None, asset=None)),
         "/v1/payments/order/create",
         '{"mode":"fiat","order_id":"o-1","user_id":"u-1"}',
+    ),
+    (
+        "pay_ins.create multiple payments wildcard accuracy",
+        lambda c: c.pay_ins.create(CreatePayInRequest(
+            order_id="o-1", user_id="u-1", mode="fiat", amount_fiat="25.00", currency="USD",
+            accuracy_payment_percent=-1, is_payment_multiple=True)),
+        "/v1/payments/order/create",
+        '{"accuracy_payment_percent":-1,"amount_fiat":"25.00","currency":"USD",'
+        '"is_payment_multiple":true,"mode":"fiat","order_id":"o-1","user_id":"u-1"}',
     ),
     (
         "pay_ins.create nested none",

@@ -31,6 +31,11 @@ async def main() -> None:
                 currency="USD",
                 url_callback=os.environ.get("URL_CALLBACK", "https://example.com/cb"),
                 url_success=os.environ.get("URL_SUCCESS", "https://example.com/thanks"),
+                # accuracy_payment_percent=-1 accepts any amount (range -1..15,
+                # default 5); is_payment_multiple=True lets the invoice be paid
+                # in several transactions - each partial payment fires
+                # invoice.wrong_amount_waiting (invoice.late_payment after the
+                # final status) with received/remaining amounts and payments[].
             )
         )
         print("invoice uuid:", invoice.uuid, "status:", invoice.status)
@@ -38,7 +43,7 @@ async def main() -> None:
 
         # In production, settle on the invoice.* webhook. Here we just block.
         final = await client.pay_ins.wait_for(invoice.uuid, timeout=1800)
-        print("final status:", final.status)  # paid | expired | cancel
+        print("final status:", final.status)  # paid | paid_less | paid_over | expired | cancel
 
 
 if __name__ == "__main__":
