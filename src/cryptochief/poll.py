@@ -32,8 +32,9 @@ async def wait_for_terminal(
 ) -> T:
     """Poll ``fetch_one`` until ``is_terminal`` holds or ``timeout`` elapses.
 
-    Transient (retryable) fetch errors are tolerated and retried on the next
-    tick; other errors propagate immediately. On timeout a
+    Fetch errors for which :func:`~cryptochief.is_retryable` holds (HTTP 502,
+    503, 504, network errors) are retried on the next tick; other errors
+    propagate immediately. On timeout a
     :class:`PollTimeoutError` carrying the last observed state is raised.
     """
     interval = interval if interval and interval > 0 else 5.0

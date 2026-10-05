@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.15.0] — 2026-10-05
+
+- Automatic retries: 502, 503, 504 and network errors only; 500 is no longer retried. `is_retryable` and the `wait_for` helpers follow the same rule
+
 ## [0.14.0] — 2026-10-01
 
 - Multi-payment PayIn (`is_payment_multiple`): an invoice can be paid in several transfers; underpaid orders sit in `wrong_amount_waiting`, top-ups are accepted until `expired_at` + 1 hour, a partial timeout finalizes as `paid_less`; new webhook events `invoice.wrong_amount_waiting` (on every receipt) and `invoice.late_payment`; webhook payloads and `PayIn` models carry `is_payment_multiple`, `received_amount_crypto`, `remaining_amount_crypto` and `payments[]`

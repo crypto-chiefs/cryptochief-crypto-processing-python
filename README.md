@@ -24,7 +24,8 @@ error hierarchy.
 - **Contract calls without hand-encoded calldata** - Solidity ABI for EVM and
   TRON, Anchor + Borsh for Solana, Jetton / NFT / comment helpers for TON.
 - **Local RSA decryption** of generated wallet private keys.
-- Stable error codes via `APIError.code`, automatic retry on transient failures.
+- Stable error codes via `APIError.code`, automatic retry of HTTP 502, 503, 504
+  and network errors.
 - Arbitrary-precision amounts via native `int` - never `float`.
 - Webhook verification + typed events, framework-agnostic.
 - `await client.payouts.wait_for(uuid)` polling that resolves when a payout /
@@ -530,10 +531,11 @@ untouched `.raw` body); branch on `ErrorCode` rather than parsing messages.
 | `{"data":null,"error":{"name":"...","message":"...","details":{"code":"CODE"}}}` | `error.details.code`, else `error.name` |
 | anything else | `HTTP_<status>` |
 
-`.server_time` is set on `SIGNATURE_TIMESTAMP_OUT_OF_RANGE`. 5xx and network
-errors are retried automatically; 4xx is raised immediately, except for one
-repeat after `SIGNATURE_TIMESTAMP_OUT_OF_RANGE` with the clock offset taken from
-`server_time`.
+`.server_time` is set on `SIGNATURE_TIMESTAMP_OUT_OF_RANGE`. HTTP 502, 503, 504
+and network errors are retried automatically, up to `retries` times (3 by
+default); every other status, 500 included, is raised immediately, except for
+one repeat after `SIGNATURE_TIMESTAMP_OUT_OF_RANGE` with the clock offset taken
+from `server_time`. `is_retryable(err)` applies the same rule.
 
 ```python
 from cryptochief import APIError, ErrorCode

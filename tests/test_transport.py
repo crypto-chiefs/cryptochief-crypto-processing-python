@@ -15,7 +15,9 @@ from cryptochief import (
     EstimatePayoutRequest,
     idempotency_key,
     is_api_error,
+    is_retryable,
 )
+from cryptochief.poll import wait_for_terminal
 from signed_request import NONCE_RE, assert_signed
 from signed_request import expected_signature as expected_hmac
 
@@ -89,16 +91,54 @@ async def test_maps_error_envelope_to_api_error():
     await client.aclose()
 
 
-async def test_retries_5xx_then_succeeds():
+@pytest.mark.parametrize("status", [502, 503, 504])
+async def test_retries_502_503_504_then_succeeds(status):
     def handler(attempt, request):
         if attempt == 0:
-            return httpx.Response(503, text="upstream")
+            return httpx.Response(status, text="upstream")
         return httpx.Response(200, json={"uuid": "u1", "status": "queue"})
 
     client, calls = make_client(handler)
     res = await client.payouts.info("u1")
     assert res.uuid == "u1"
     assert len(calls) == 2
+    await client.aclose()
+
+
+@pytest.mark.parametrize("retries", [0, 1, 3])
+@pytest.mark.parametrize("status", [502, 503, 504])
+async def test_502_503_504_use_the_whole_retry_budget(status, retries):
+    client, calls = make_client(
+        lambda attempt, request: httpx.Response(status, text="upstream"), retries=retries
+    )
+    with pytest.raises(APIError) as ei:
+        await client.payouts.info("u1")
+    assert ei.value.http_status == status
+    assert ei.value.code == f"HTTP_{status}"
+    assert len(calls) == retries + 1
+    await client.aclose()
+
+
+async def test_500_is_attempted_once():
+    def handler(attempt, request):
+        return httpx.Response(500, json={"ok": False, "error": "INTERNAL_ERROR", "msg": "boom"})
+
+    client, calls = make_client(handler)
+    with pytest.raises(APIError) as ei:
+        await client.payouts.info("u1")
+    assert ei.value.http_status == 500
+    assert ei.value.code == "INTERNAL_ERROR"
+    assert len(calls) == 1
+    await client.aclose()
+
+
+@pytest.mark.parametrize("status", [429, 500, 501, 505, 520, 599])
+async def test_other_statuses_are_not_retried(status):
+    client, calls = make_client(lambda attempt, request: httpx.Response(status, text="x"))
+    with pytest.raises(APIError) as ei:
+        await client.payouts.info("u1")
+    assert ei.value.http_status == status
+    assert len(calls) == 1
     await client.aclose()
 
 
@@ -124,6 +164,68 @@ async def test_retries_network_errors():
     assert res.uuid == "u2"
     assert len(calls) == 2
     await client.aclose()
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        httpx.ConnectError("refused"),
+        httpx.ReadTimeout("timeout"),
+        httpx.ReadError("connection reset while reading the body"),
+        httpx.RemoteProtocolError("server disconnected"),
+    ],
+    ids=["connect", "timeout", "read", "disconnect"],
+)
+async def test_network_errors_use_the_whole_retry_budget(exc):
+    def handler(attempt, request):
+        raise exc
+
+    client, calls = make_client(handler, retries=2)
+    with pytest.raises(APIError) as ei:
+        await client.payouts.info("u1")
+    assert ei.value.code == ErrorCode.NETWORK_ERROR
+    assert ei.value.http_status == 0
+    assert len(calls) == 3
+    await client.aclose()
+
+
+@pytest.mark.parametrize(
+    "err,expected",
+    [
+        (APIError(ErrorCode.NETWORK_ERROR, message="connection refused"), True),
+        (APIError("HTTP_502", http_status=502), True),
+        (APIError("HTTP_503", http_status=503), True),
+        (APIError("HTTP_504", http_status=504), True),
+        (APIError("INTERNAL_ERROR", http_status=500), False),
+        (APIError(ErrorCode.NETWORK_ERROR, http_status=500), False),
+        (APIError("HTTP_501", http_status=501), False),
+        (APIError("HTTP_505", http_status=505), False),
+        (APIError("HTTP_520", http_status=520), False),
+        (APIError("HTTP_429", http_status=429), False),
+        (APIError(ErrorCode.INVALID_PARAMS, http_status=400), False),
+        (APIError(ErrorCode.SIGNATURE_TIMESTAMP_OUT_OF_RANGE, http_status=401), False),
+        (APIError("SOMETHING", http_status=0), False),
+        (CryptoChiefError("cryptochief: x"), False),
+        (ValueError("x"), False),
+    ],
+)
+def test_is_retryable_matches_the_client_rule(err, expected):
+    assert is_retryable(err) is expected
+
+
+async def test_wait_for_stops_on_500_and_keeps_polling_through_503():
+    calls = []
+
+    async def fetch_one():
+        calls.append(None)
+        if len(calls) == 1:
+            raise APIError("HTTP_503", http_status=503)
+        raise APIError("INTERNAL_ERROR", http_status=500)
+
+    with pytest.raises(APIError) as ei:
+        await wait_for_terminal(fetch_one, lambda _: True, interval=0.001, timeout=5)
+    assert ei.value.http_status == 500
+    assert len(calls) == 2
 
 
 def ok_handler(attempt, request):

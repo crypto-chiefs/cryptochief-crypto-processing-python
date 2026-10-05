@@ -141,7 +141,8 @@ class CryptoChiefClient:
         """Low-level signed request to an API path (e.g. ``/v1/payout/estimate``).
 
         Serializes the body to JSON, signs the sent bytes with HMAC v1, retries
-        transient failures, and returns the parsed JSON. Service methods are thin
+        HTTP 502, 503, 504 and network errors up to ``retries`` times, and
+        returns the parsed JSON. Service methods are thin
         wrappers over this; reach for it directly only to hit an endpoint the SDK
         doesn't model yet, including one that takes another ``method`` - a signed
         ``GET`` with a query string, say. Dict members whose value is ``None`` are
@@ -207,7 +208,7 @@ class CryptoChiefClient:
                     ) from err
 
             api_err = parse_api_error(status, text)
-            if status >= 500:
+            if is_retryable(api_err):
                 last_err = api_err
                 attempt += 1
                 sleep_first = True

@@ -163,12 +163,18 @@ def is_api_error(err: object, code: Optional[str] = None) -> bool:
     return isinstance(err, APIError) and (code is None or err.code == code)
 
 
-def is_retryable(err: object) -> bool:
-    """Report whether an error is plausibly transient and worth retrying.
+#: HTTP statuses the client retries automatically.
+_RETRYABLE_STATUSES = frozenset({502, 503, 504})
 
-    Only 5xx responses and transport ``NETWORK_ERROR`` failures qualify; 4xx is
-    the caller's fault and is never retried.
+
+def is_retryable(err: object) -> bool:
+    """Report whether the client retries an error automatically.
+
+    ``True`` for HTTP 502, 503 and 504 and for ``NETWORK_ERROR`` (no response
+    received); ``False`` for every other status, 500 included.
     """
     if isinstance(err, APIError):
-        return err.http_status >= 500 or err.code == ErrorCode.NETWORK_ERROR
+        if err.http_status == 0:
+            return err.code == ErrorCode.NETWORK_ERROR
+        return err.http_status in _RETRYABLE_STATUSES
     return False
