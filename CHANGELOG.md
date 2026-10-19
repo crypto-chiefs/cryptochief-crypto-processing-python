@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- `ErrorCode`: `INSUFFICIENT_BALANCE`, `SIMULATION_REVERTED` (match by prefix), `URL_CALLBACK_HOST_NOT_ALLOWED`, `URL_CALLBACK_SCHEME_INVALID`, `URL_CALLBACK_INVALID`, `CALLBACK_URL_INVALID`
+
 ## [0.15.0] — 2026-10-05
 
 - Automatic retries: 502, 503, 504 and network errors only; 500 is no longer retried. `is_retryable` and the `wait_for` helpers follow the same rule
