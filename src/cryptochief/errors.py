@@ -125,6 +125,17 @@ class ErrorCode(str, Enum):
     #: The request body exceeds the gateway limit (HTTP 413).
     PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
     URL_CALLBACK_REQUIRED = "URL_CALLBACK_REQUIRED"
+    #: ``url_callback`` of a PayIn, payout, batch payout item or signed
+    #: transaction: the host is a non-public IP address, a single-label or local
+    #: name, or resolves to a non-public address (HTTP 400).
+    URL_CALLBACK_HOST_NOT_ALLOWED = "url_callback_HOST_NOT_ALLOWED"
+    #: ``url_callback``: the scheme is not https or http (HTTP 400).
+    URL_CALLBACK_SCHEME_INVALID = "url_callback_SCHEME_INVALID"
+    #: ``url_callback``: not an absolute URL (HTTP 400).
+    URL_CALLBACK_INVALID = "url_callback_INVALID"
+    #: Static wallet ``callback_url`` (generate, set callback URL) breaks the same
+    #: rule; the reason is in the message (HTTP 400).
+    CALLBACK_URL_INVALID = "CALLBACK_URL_INVALID"
     BATCH_EMPTY = "BATCH_EMPTY"
     BATCH_TOO_LARGE = "BATCH_TOO_LARGE"
     BATCH_DUPLICATE_ORDER_ID = "BATCH_DUPLICATE_ORDER_ID"
@@ -155,6 +166,14 @@ class ErrorCode(str, Enum):
     CONTRACT_CALLS_UNSUPPORTED_ON_NETWORK = "CONTRACT_CALLS_UNSUPPORTED_ON_NETWORK"
     #: Fee estimation does not support ``type="contract"`` (HTTP 400).
     CONTRACT_ESTIMATE_UNSUPPORTED = "CONTRACT_ESTIMATE_UNSUPPORTED"
+    #: Transaction estimate or sign of a token transfer: ``from_address`` holds
+    #: less of the token than ``value`` (HTTP 400). Execute reports it as
+    #: ``PREFLIGHT_FAILED: insufficient_balance``.
+    INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE"
+    #: EVM sign: the transaction reverted in simulation (HTTP 400). The
+    #: contract's reason may follow (``SIMULATION_REVERTED: <reason>``); compare
+    #: with ``code.startswith(...)``.
+    SIMULATION_REVERTED = "SIMULATION_REVERTED"
     NETWORK_ERROR = "NETWORK_ERROR"
 
 
