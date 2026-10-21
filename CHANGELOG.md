@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.16.0] — 2026-10-21
+
+- Batch payout estimate and execute items: optional `http_status`; `is_batch_item_retryable` returns `True` only for HTTP 502
+
 ## [0.15.1] — 2026-10-19
 
 - `ErrorCode`: `INSUFFICIENT_BALANCE`, `SIMULATION_REVERTED` (match by prefix), `URL_CALLBACK_HOST_NOT_ALLOWED`, `URL_CALLBACK_SCHEME_INVALID`, `URL_CALLBACK_INVALID`, `CALLBACK_URL_INVALID`

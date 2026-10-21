@@ -128,6 +128,7 @@ from .services.payouts import (
     PayoutsService,
     PayoutSource,
     PayoutStatus,
+    is_batch_item_retryable,
     is_payout_terminal,
 )
 from .services.static_deposits import (
@@ -331,6 +332,7 @@ __all__ = [
     "BatchPayoutRequest",
     "BatchPayoutResponse",
     "BatchItemResult",
+    "is_batch_item_retryable",
     "PayoutStatus",
     "is_payout_terminal",
     # Transaction types

@@ -157,6 +157,16 @@ class BatchItemResult:
     status: Optional[str] = None
     uuid: Optional[str] = None
     error: Optional[str] = None
+    #: HTTP status of the item error. Absent for successful items.
+    http_status: Optional[int] = None
+
+
+def is_batch_item_retryable(item: BatchItemResult) -> bool:
+    """Whether a batch payout item can be retried: only HTTP 502.
+
+    For batch execute, re-send the item with the same ``order_id``.
+    """
+    return item.http_status == 502
 
 
 @dataclass(kw_only=True)

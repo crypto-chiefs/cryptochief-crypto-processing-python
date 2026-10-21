@@ -537,6 +537,10 @@ default); every other status, 500 included, is raised immediately, except for
 one repeat after `SIGNATURE_TIMESTAMP_OUT_OF_RANGE` with the clock offset taken
 from `server_time`. `is_retryable(err)` applies the same rule.
 
+Batch payout estimate and execute items carry an optional `http_status` for
+errors; it is `None` when absent. `is_batch_item_retryable(item)` returns `True`
+only for `http_status == 502`. Re-send batch execute items with the same `order_id`.
+
 ```python
 from cryptochief import APIError, ErrorCode
 
